@@ -16,7 +16,10 @@ class BadCaseSample(Base):
     ai_confidence = Column(DECIMAL(5, 4), nullable=True)
     sample_status = Column(String(16), nullable=False, default="pending")
     source = Column(String(16), nullable=False, default="review_correction")
-    created_at = Column(DateTime(3), nullable=False, default=datetime.utcnow)
+    # NOTE: For MySQL 8.0 production with millisecond precision, use:
+    # from sqlalchemy.dialects.mysql import DATETIME
+    # created_at = Column(DATETIME(fsp=3), nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_status", "sample_status"),

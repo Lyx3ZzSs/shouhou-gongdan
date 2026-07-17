@@ -18,7 +18,10 @@ class WorkOrderAuditLog(Base):
     ai_confidence = Column(DECIMAL(5, 4), nullable=True)
     operator_id = Column(String(64), nullable=False)
     operator_name = Column(String(64), nullable=True)
-    operated_at = Column(DateTime(3), nullable=False, default=datetime.utcnow)
+    # NOTE: For MySQL 8.0 production with millisecond precision, use:
+    # from sqlalchemy.dialects.mysql import DATETIME
+    # operated_at = Column(DATETIME(fsp=3), nullable=False, default=datetime.utcnow)
+    operated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_workorder", "workorder_id"),
