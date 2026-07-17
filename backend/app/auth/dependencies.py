@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
 
 security = HTTPBearer()
 
@@ -14,12 +13,8 @@ class CurrentUser:
     department: str
 
 
-async def get_current_user(
-    token: str = None,
-    db: AsyncSession = None,
-) -> CurrentUser:
-    if token and token.startswith("Bearer "):
-        token = token[7:]
+def validate_token(token: str) -> CurrentUser:
+    """Validate a raw JWT token string and return a CurrentUser."""
     payload = decode_jwt(token)
     user = CurrentUser(
         user_id=payload["sub"],
@@ -30,6 +25,13 @@ async def get_current_user(
     if user.role != "customer_service_agent":
         raise HTTPException(status_code=403, detail="仅客服坐席可执行此操作")
     return user
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> CurrentUser:
+    token = credentials.credentials
+    return validate_token(token)
 
 
 def decode_jwt(token: str) -> dict:

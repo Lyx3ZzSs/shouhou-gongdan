@@ -1,13 +1,12 @@
 import pytest
-from unittest.mock import patch, AsyncMock
-from app.auth.dependencies import get_current_user, CurrentUser
+from unittest.mock import patch
+from app.auth.dependencies import validate_token, CurrentUser
 
 
 @pytest.mark.asyncio
 async def test_get_current_user_from_valid_token():
     """operator_id 从 JWT token payload 提取，非客户端传入"""
-    mock_db = AsyncMock()
-    token = "Bearer eyJ.valid.token"
+    token = "eyJ.valid.token"
     with patch("app.auth.dependencies.decode_jwt") as mock_decode:
         mock_decode.return_value = {
             "sub": "agent-001",
@@ -15,7 +14,7 @@ async def test_get_current_user_from_valid_token():
             "role": "customer_service_agent",
             "department": "售后部",
         }
-        user = await get_current_user(token=token, db=mock_db)
+        user = validate_token(token)
         assert user.user_id == "agent-001"
         assert user.name == "张三"
         assert user.role == "customer_service_agent"
@@ -24,8 +23,7 @@ async def test_get_current_user_from_valid_token():
 
 @pytest.mark.asyncio
 async def test_get_current_user_rejects_non_agent_role():
-    mock_db = AsyncMock()
-    token = "Bearer eyJ.valid.token"
+    token = "eyJ.valid.token"
     with patch("app.auth.dependencies.decode_jwt") as mock_decode:
         mock_decode.return_value = {
             "sub": "user-001",
@@ -34,5 +32,15 @@ async def test_get_current_user_rejects_non_agent_role():
             "department": "售后部",
         }
         with pytest.raises(Exception) as exc:
-            await get_current_user(token=token, db=mock_db)
+            validate_token(token)
         assert "403" in str(exc.value) or "Forbidden" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_invalid_jwt():
+    token = "invalid.token"
+    with patch("app.auth.dependencies.decode_jwt") as mock_decode:
+        import jwt
+        mock_decode.side_effect = jwt.PyJWTError("Invalid token")
+        with pytest.raises(jwt.PyJWTError):
+            validate_token(token)
