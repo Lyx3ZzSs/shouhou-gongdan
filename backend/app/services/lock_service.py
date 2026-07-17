@@ -15,19 +15,36 @@ class LockService:
     async def acquire(self, workorder_id: str, operator_id: str, operator_name: str) -> dict:
         """获取锁。返回 {locked, owner, locked_minutes?}"""
         key = f"{LOCK_PREFIX}{workorder_id}"
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        value = f"{operator_id}:{operator_name}:{now}"
+
+        # 原子尝试获取锁：SET NX 只在 key 不存在时写入
+        ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
+        if ok:
+            return {"locked": True, "owner": operator_name}
+
+        # 锁已被他人持有，读取持有者信息
         existing = await self.redis.get(key)
         if existing:
             owner_id, owner_name, locked_at = existing.decode().split(":", maxsplit=2)
             if owner_id == operator_id:
-                await self.redis.expire(key, LOCK_TTL)  # 幂等：刷新 TTL
+                # 幂等：同一持有者重复获取，刷新 TTL
+                await self.redis.expire(key, LOCK_TTL)
                 return {"locked": True, "owner": owner_name}
             else:
-                return {"locked": False, "owner": owner_name, "locked_minutes": 3}
-        else:
-            now = datetime.datetime.now(datetime.UTC).isoformat()
-            value = f"{operator_id}:{operator_name}:{now}"
-            await self.redis.set(key, value, ex=LOCK_TTL)
-            return {"locked": True, "owner": operator_name}
+                # 计算实际锁定分钟数
+                locked_at_dt = datetime.datetime.fromisoformat(locked_at)
+                now = datetime.datetime.now(datetime.UTC)
+                if locked_at_dt.tzinfo is None:
+                    locked_at_dt = locked_at_dt.replace(tzinfo=datetime.UTC)
+                elapsed = (now - locked_at_dt).total_seconds()
+                locked_minutes = max(1, int(elapsed / 60) + 1)
+                return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes}
+
+        # 锁在 SET NX 和 GET 之间过期（极端情况），视为可获取
+        value = f"{operator_id}:{operator_name}:{now}"
+        await self.redis.set(key, value, ex=LOCK_TTL)
+        return {"locked": True, "owner": operator_name}
 
     async def release(self, workorder_id: str, operator_id: str) -> None:
         """释放锁。仅持有者可释放，否则抛出 PermissionError"""

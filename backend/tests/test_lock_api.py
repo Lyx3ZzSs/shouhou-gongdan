@@ -79,3 +79,47 @@ async def test_heartbeat_only_by_owner(client, redis):
     )
     resp = await client.put("/api/workorders/WO004/lock")
     assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_idempotent_for_owner(client, redis):
+    """G1: 同一持有者重复获取锁幂等成功"""
+    # 首次获取
+    resp1 = await client.post("/api/workorders/WO005/lock")
+    assert resp1.status_code == 200
+    assert resp1.json()["locked"] is True
+    assert resp1.json()["owner"] == "张三"
+
+    # 相同持有者再次获取
+    resp2 = await client.post("/api/workorders/WO005/lock")
+    assert resp2.status_code == 200
+    assert resp2.json()["locked"] is True
+    assert resp2.json()["owner"] == "张三"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_expired_lock(client, redis):
+    """G2: 已过期的锁心跳返回 423"""
+    resp = await client.put("/api/workorders/WO006/lock")
+    assert resp.status_code == 423
+    assert "已过期" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_release_lock_by_owner_success(client, redis):
+    """G3: 持有者释放锁成功"""
+    # 先获取锁
+    await client.post("/api/workorders/WO007/lock")
+    resp = await client.delete("/api/workorders/WO007/lock")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "released"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_by_owner_success(client, redis):
+    """G4: 持有者心跳续期成功"""
+    # 先获取锁
+    await client.post("/api/workorders/WO008/lock")
+    resp = await client.put("/api/workorders/WO008/lock")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
