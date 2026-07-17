@@ -3,6 +3,7 @@ import React from 'react';
 import { createForm } from '@formily/core';
 import { createSchemaField } from '@formily/react';
 import { Form, FormItem, Input, Select, DatePicker, Radio, FormTab } from '@formily/antd';
+import type { Form as FormilyForm } from '@formily/core';
 import { reviewSchema } from './schema';
 import type { WorkOrderData } from './types';
 
@@ -12,7 +13,7 @@ const SchemaField = createSchemaField({
 
 interface Props {
   workorder: WorkOrderData;
-  onFormReady: (form: ReturnType<typeof createForm>) => void;
+  onFormReady: (form: FormilyForm) => void;
 }
 
 export const EditFormPanel: React.FC<Props> = ({ workorder, onFormReady }) => {
