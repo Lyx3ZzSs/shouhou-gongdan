@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, update
 from fastapi import HTTPException
 from app.schemas.review import ReviewRequest, ReviewResponse, ALLOWED_FIELDS
+from app.models.workorder import WorkOrder
 from app.services.audit_service import AuditService
 from app.services.bad_case_service import BadCaseService
-from app.services.lock_service import LockService
+from app.services.lock_service import get_lock_service
 
 
 class ReviewService:
@@ -14,7 +15,7 @@ class ReviewService:
         self.db = db
         self.audit_service = AuditService(db)
         self.bad_case_service = BadCaseService(db)
-        self.lock_service = LockService()
+        self.lock_service = get_lock_service()
 
     async def review(
         self,
@@ -63,50 +64,52 @@ class ReviewService:
         if result.rowcount == 0:
             raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
 
-        # 3. 白名单过滤 + 更新变更字段
-        filtered_changes = [
-            c for c in request.changes
-            if c.path.lstrip("/") in ALLOWED_FIELDS
-        ]
-        for c in filtered_changes:
-            field_name = c.path.lstrip("/")
-            await self.db.execute(
-                text(f"UPDATE workorder SET {field_name} = :val WHERE id = :id"),
-                {"val": c.new_value, "id": workorder_id},
-            )
+        try:
+            # 3. 白名单过滤 + 更新变更字段
+            filtered_changes = [
+                c for c in request.changes
+                if c.path.lstrip("/") in ALLOWED_FIELDS
+            ]
+            for c in filtered_changes:
+                field_name = c.path.lstrip("/")
+                await self.db.execute(
+                    update(WorkOrder)
+                    .where(WorkOrder.id == workorder_id)
+                    .values(**{field_name: c.new_value}),
+                )
 
-        # 4. 写入审计日志
-        audit_logs = await self.audit_service.batch_create(
-            workorder_id=workorder_id,
-            session_id=request.session_id,
-            changes=filtered_changes,
-            operator_id=operator_id,
-            operator_name=operator_name,
-        )
-
-        # 5. bad_case 回流（仅 confirmed + 有变更时）
-        bad_case_count = 0
-        if filtered_changes:
-            audit_log_ids = [log.id for log in audit_logs]
-            await self.bad_case_service.batch_create(
+            # 4. 写入审计日志
+            audit_logs = await self.audit_service.batch_create(
                 workorder_id=workorder_id,
-                audit_log_ids=audit_log_ids,
+                session_id=request.session_id,
                 changes=filtered_changes,
+                operator_id=operator_id,
+                operator_name=operator_name,
             )
-            bad_case_count = len(filtered_changes)
 
-        # 6. 释放编辑锁
-        await self.lock_service.release(workorder_id, operator_id)
+            # 5. bad_case 回流（仅 confirmed + 有变更时）
+            bad_case_count = 0
+            if filtered_changes:
+                audit_log_ids = [log.id for log in audit_logs]
+                await self.bad_case_service.batch_create(
+                    workorder_id=workorder_id,
+                    audit_log_ids=audit_log_ids,
+                    changes=filtered_changes,
+                )
+                bad_case_count = len(filtered_changes)
 
-        review_id = f"rev-{uuid.uuid4().hex[:12]}"
-        return {
-            "review_id": review_id,
-            "workorder_id": workorder_id,
-            "status": "confirmed",
-            "change_count": len(filtered_changes),
-            "bad_case_count": bad_case_count,
-            "next_status": "dispatching",
-        }
+            review_id = f"rev-{uuid.uuid4().hex[:12]}"
+            return {
+                "review_id": review_id,
+                "workorder_id": workorder_id,
+                "status": "confirmed",
+                "change_count": len(filtered_changes),
+                "bad_case_count": bad_case_count,
+                "next_status": "dispatching",
+            }
+        finally:
+            # 6. 释放编辑锁（无论成功或异常都要释放，避免孤儿锁）
+            await self.lock_service.release(workorder_id, operator_id)
 
     async def _execute_reject(self, workorder_id, request, operator_id, operator_name):
         result = await self.db.execute(
@@ -130,26 +133,27 @@ class ReviewService:
         if result.rowcount == 0:
             raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
 
-        await self.audit_service.create_reject_log(
-            workorder_id=workorder_id,
-            session_id=request.session_id,
-            reject_reason=request.reject_reason,
-            operator_id=operator_id,
-            operator_name=operator_name,
-        )
+        try:
+            await self.audit_service.create_reject_log(
+                workorder_id=workorder_id,
+                session_id=request.session_id,
+                reject_reason=request.reject_reason,
+                operator_id=operator_id,
+                operator_name=operator_name,
+            )
 
-        # 释放锁
-        await self.lock_service.release(workorder_id, operator_id)
-
-        review_id = f"rev-{uuid.uuid4().hex[:12]}"
-        return {
-            "review_id": review_id,
-            "workorder_id": workorder_id,
-            "status": "rejected",
-            "change_count": 0,
-            "bad_case_count": 0,
-            "next_status": "pending_review",
-        }
+            review_id = f"rev-{uuid.uuid4().hex[:12]}"
+            return {
+                "review_id": review_id,
+                "workorder_id": workorder_id,
+                "status": "rejected",
+                "change_count": 0,
+                "bad_case_count": 0,
+                "next_status": "pending_review",
+            }
+        finally:
+            # 释放锁（无论成功或异常都要释放，避免孤儿锁）
+            await self.lock_service.release(workorder_id, operator_id)
 
     def _build_existing_response(self, workorder_id, request):
         return {

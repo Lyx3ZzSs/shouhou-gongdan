@@ -218,7 +218,7 @@ async def client(mock_user, engine):
 
     # Patch LockService.release to a no-op so the integration tests don't
     # require a running Redis instance.
-    with patch("app.services.review_service.LockService.release"):
+    with patch("app.services.lock_service.LockService.release"):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:

@@ -38,4 +38,7 @@ def decode_jwt(token: str) -> dict:
     # TODO: 替换为实际的 JWT 解码逻辑（项目级配置）
     import jwt
     from app.core.config import settings
-    return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+    try:
+        return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"无效的认证令牌: {e}")

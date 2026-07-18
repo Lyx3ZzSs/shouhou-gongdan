@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 
 import redis.asyncio as aioredis
@@ -8,9 +9,34 @@ LOCK_PREFIX = "review_lock:"
 LOCK_TTL = 300  # 5 分钟
 
 
+_lock_service = None
+
+
+def get_lock_service():
+    """返回 LockService 的模块级单例，避免每次请求创建新的 Redis 连接池。
+    Redis 客户端通过 @property 懒初始化，并在事件循环切换时自动重建。"""
+    global _lock_service
+    if _lock_service is None:
+        _lock_service = LockService()
+    return _lock_service
+
+
 class LockService:
     def __init__(self):
-        self.redis = aioredis.from_url(settings.REDIS_URL)
+        self._redis = None
+        self._loop_id = None
+
+    @property
+    def redis(self):
+        """懒初始化 Redis 连接，事件循环切换时自动重建。"""
+        try:
+            current_loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            current_loop_id = None
+        if self._redis is None or self._loop_id != current_loop_id:
+            self._redis = aioredis.from_url(settings.REDIS_URL)
+            self._loop_id = current_loop_id
+        return self._redis
 
     async def acquire(self, workorder_id: str, operator_id: str, operator_name: str) -> dict:
         """获取锁。返回 {locked, owner, locked_minutes?}"""

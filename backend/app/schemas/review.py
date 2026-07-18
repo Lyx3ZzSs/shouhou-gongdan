@@ -29,6 +29,67 @@ class FieldChange(BaseModel):
         return v
 
 
+class WorkOrderSummary(BaseModel):
+    """Summary row for GET /api/workorders list."""
+    id: str
+    serial_number: str | None = None
+    station_name: str | None = None
+    status: str | None = None
+    customer_name: str | None = None
+    created_at: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorkOrderResponse(BaseModel):
+    """Response for GET /api/workorders/{id} — mirrors frontend WorkOrderData."""
+    id: str
+    version: int
+    status: str | None = None
+    reject_count: int = 0
+    last_reject_reason: str | None = None
+    last_rejected_by: str | None = None
+    last_rejected_at: str | None = None
+    ai_confidence: float | None = None
+    serial_number: str | None = None
+    created_at: str | None = None
+    initiator: str | None = None
+    initiator_department: str | None = None
+    station_name: str | None = None
+    dispatch_name: str | None = None
+    project_code: str | None = None
+    project_name: str | None = None
+    project_province: str | None = None
+    customer_name: str | None = None
+    problem_description: str | None = None
+    feedback_channel: str | None = None
+    product_line: str | None = None
+    product_category: str | None = None
+    product_type: str | None = None
+    customer_level: str | None = None
+    problem_category_l1: str | None = None
+    problem_category_l2: str | None = None
+    problem_category_l3: str | None = None
+    order_type: str | None = None
+    problem_type: str | None = None
+    fault_category: str | None = None
+    fault_detail: str | None = None
+    responsible_person: str | None = None
+    responsible_department: str | None = None
+    primary_department: str | None = None
+    after_sales_person: str | None = None
+    transferred_person: str | None = None
+    transferred_department: str | None = None
+    order_level: str | None = None
+    fault_level: str | None = None
+    onsite_level: str | None = None
+    required_solve_time: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class ReviewRequest(BaseModel):
     session_id: str
     version: int
@@ -50,3 +111,11 @@ class ReviewResponse(BaseModel):
     change_count: int
     bad_case_count: int
     next_status: str
+
+
+class LockStatus(BaseModel):
+    """Response for lock acquire / release / heartbeat endpoints."""
+    locked: bool | None = None
+    owner: str | None = None
+    locked_minutes: int | None = None
+    status: str | None = None
