@@ -21,8 +21,7 @@ export function FieldReviewSections() {
       return (
         anomalyFieldIds.has(f.id) ||
         st === 'blocking_error' ||
-        st === 'warning' ||
-        st === 'low_confidence'
+        st === 'warning'
       );
     }
     return true;

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  Check,
   HelpCircle,
   History,
   KeyRound,
@@ -32,13 +31,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '../primitives/StatusBadge';
-import { ConfidenceBar } from '../primitives/ConfidenceBar';
 import { FieldDiff } from './FieldDiff';
 import { FieldEditInline } from './FieldEditInline';
 import { useReviewStore } from '../../store/useReviewStore';
 import { REASON_LABEL } from '../../lib/constants';
 import { EMPTY_LABEL, formatValue, formatTime } from '../../lib/format';
-import { LOW_CONFIDENCE_THRESHOLD } from '../../lib/constants';
 import type { FieldDef } from '../../types';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +44,6 @@ function anomalyBarColor(status: string | undefined): string {
     case 'blocking_error':
       return 'bg-destructive';
     case 'warning':
-    case 'low_confidence':
       return 'bg-warning';
     default:
       return 'bg-transparent';
@@ -64,7 +60,6 @@ export function FieldReviewRow({ field, index }: { field: FieldDef; index: numbe
   const changeLog = useReviewStore((s) => s.changeLog);
 
   const setEditingField = useReviewStore((s) => s.setEditingField);
-  const confirmField = useReviewStore((s) => s.confirmField);
   const resetField = useReviewStore((s) => s.resetField);
   const useSuggestion = useReviewStore((s) => s.useSuggestion);
   const setFieldRemark = useReviewStore((s) => s.setFieldRemark);
@@ -76,7 +71,6 @@ export function FieldReviewRow({ field, index }: { field: FieldDef; index: numbe
   const isEditing = editingFieldId === field.id;
   const isModified = fs?.status === 'modified';
   const isReadonly = !!field.readonly;
-  const lowConf = field.confidence != null && field.confidence < LOW_CONFIDENCE_THRESHOLD;
   const fieldHistory = changeLog.filter((c) => c.fieldId === field.id);
   const hasAnomaly = fs?.baselineStatus !== 'unchecked';
 
@@ -131,7 +125,7 @@ export function FieldReviewRow({ field, index }: { field: FieldDef; index: numbe
     <div
       ref={ref}
       className={cn(
-        'group grid grid-cols-[3px_140px_minmax(0,1fr)_80px_90px_auto] max-lg:grid-cols-[3px_100px_minmax(0,1fr)_auto] items-center gap-x-3 transition-colors',
+        'group grid grid-cols-[3px_140px_minmax(0,1fr)_90px_auto] max-lg:grid-cols-[3px_100px_minmax(0,1fr)_auto] items-center gap-x-3 transition-colors',
         isCompact ? 'px-3 py-1 text-xs' : 'px-4 py-2 text-sm',
         // Zebra striping
         index % 2 === 0 ? 'bg-transparent' : 'bg-muted/[0.25]',
@@ -160,17 +154,9 @@ export function FieldReviewRow({ field, index }: { field: FieldDef; index: numbe
       {/* 值（diff 视图）/ 编辑 */}
       {renderValueCell()}
 
-      {/* 置信度 — 小屏隐藏 */}
-      <div className="flex items-center max-lg:hidden">
-        <ConfidenceBar value={field.confidence} />
-      </div>
-
-      {/* 状态 — 小屏隐藏 */}
+      {/* 状态 — 小屏隐藏；unchecked 不展示，减少视觉噪音 */}
       <div className="flex flex-wrap items-center gap-1 max-lg:hidden">
-        <StatusBadge status={fs.status} />
-        {lowConf && fs.status !== 'low_confidence' && (
-          <Badge variant="warning" className="text-[10px]">低置信</Badge>
-        )}
+        {fs.status !== 'unchecked' && <StatusBadge status={fs.status} />}
         {fs.uncertain && <Badge variant="muted" className="text-[10px]">不确定</Badge>}
       </div>
 
@@ -192,22 +178,6 @@ export function FieldReviewRow({ field, index }: { field: FieldDef; index: numbe
                 </TooltipTrigger>
                 <TooltipContent>编辑</TooltipContent>
               </Tooltip>
-
-              {fs.status !== 'confirmed' && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => confirmField(field.id)}
-                      aria-label={`确认 ${field.name}`}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>确认字段</TooltipContent>
-                </Tooltip>
-              )}
 
               {isModified && (
                 <Tooltip>

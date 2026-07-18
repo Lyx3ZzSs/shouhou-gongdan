@@ -11,9 +11,9 @@ async def test_audit_service_batch_create():
     service = AuditService(db)
     changes = [
         FieldChange(op="replace", path="/problem_category_l1", field_label="问题分类",
-                    old_value="数据问题", new_value="工程问题", ai_confidence=0.72),
+                    old_value="数据问题", new_value="工程问题"),
         FieldChange(op="replace", path="/order_level", field_label="受理单级别",
-                    old_value="P3", new_value="P2", ai_confidence=0.88),
+                    old_value="P3", new_value="P2"),
     ]
     await service.batch_create(
         workorder_id="WO001",
@@ -36,7 +36,7 @@ async def test_bad_case_service_batch_create():
     service = BadCaseService(db)
     changes = [
         FieldChange(op="replace", path="/problem_category_l1", field_label="问题分类",
-                    old_value="数据问题", new_value="工程问题", ai_confidence=0.72),
+                    old_value="数据问题", new_value="工程问题"),
     ]
     await service.batch_create(
         workorder_id="WO001",

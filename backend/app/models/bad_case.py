@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DECIMAL, DateTime, ForeignKey, Index
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, ForeignKey, Index
 from datetime import datetime
 
 from .base import Base
@@ -13,7 +13,6 @@ class BadCaseSample(Base):
     field_path = Column(String(128), nullable=False)
     ai_value = Column(Text, nullable=True)
     human_value = Column(Text, nullable=True)
-    ai_confidence = Column(DECIMAL(5, 4), nullable=True)
     sample_status = Column(String(16), nullable=False, default="pending")
     source = Column(String(16), nullable=False, default="review_correction")
     # NOTE: For MySQL 8.0 production with millisecond precision, use:

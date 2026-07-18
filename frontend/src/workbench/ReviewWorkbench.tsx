@@ -80,7 +80,7 @@ export function ReviewWorkbench() {
           {/* 移动端：队列展开时的遮罩 */}
           {!leftCollapsed && (
             <div
-              className="hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
+              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
               onClick={toggleLeft}
               aria-hidden
             />
@@ -102,7 +102,7 @@ export function ReviewWorkbench() {
           {/* 移动端：侧栏展开时的遮罩 */}
           {!rightCollapsed && (
             <div
-              className="hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
+              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
               onClick={toggleRight}
               aria-hidden
             />

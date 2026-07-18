@@ -5,7 +5,6 @@ export type FieldReviewStatus =
   | 'unchecked'
   | 'confirmed'
   | 'modified'
-  | 'low_confidence'
   | 'warning'
   | 'blocking_error';
 
@@ -47,7 +46,6 @@ export interface FieldDef {
   group: FieldGroupId;
   originalValue: unknown;
   systemSuggestion?: unknown;
-  confidence?: number | null; // 0-100
   required?: boolean;
   type: FieldType;
   options?: { label: string; value: string }[];
@@ -110,7 +108,6 @@ export interface ReviewTicket {
   status: 'pending_review' | 'reviewing' | 'returned' | 'rejected' | 'approved';
   createdAt: string;
   slaRemainingMin: number;
-  systemConfidence: number;
   reviewer: string;
   version: number;
   fields: FieldDef[];
@@ -124,6 +121,7 @@ export interface QueueItem {
   serialNumber: string;
   title: string;
   type: string;
+  source: string;
   riskLevel: RiskLevel;
   status: QueueItemStatus;
   anomalyCount: number;
@@ -131,7 +129,6 @@ export interface QueueItem {
   createdAt: string;
   stashed?: boolean;
   lockedByOther?: string | null;
-  hasLowConfidence?: boolean;
   hasValidationError?: boolean;
   modified?: boolean;
   urgency: 'high' | 'medium' | 'low';
@@ -155,7 +152,6 @@ export interface QueueFilters {
   type: string; // 'all' | type values
   source: string;
   sla: string; // 'all' | normal|warning|timeout
-  lowConfidence: boolean;
   validationError: boolean;
   modified: boolean;
   keyword: string;

@@ -19,7 +19,6 @@ class FieldChange(BaseModel):
     field_label: str
     old_value: Any | None = None
     new_value: Any | None = None
-    ai_confidence: float | None = None
 
     @field_validator("path")
     @classmethod
@@ -51,7 +50,6 @@ class WorkOrderResponse(BaseModel):
     last_reject_reason: str | None = None
     last_rejected_by: str | None = None
     last_rejected_at: str | None = None
-    ai_confidence: float | None = None
     serial_number: str | None = None
     created_at: str | None = None
     initiator: str | None = None
@@ -97,6 +95,15 @@ class ReviewRequest(BaseModel):
     reject_reason: str | None = None
 
 
+class ConfirmRequest(BaseModel):
+    """确认提交请求 — 新增 idempotency_key 用于销售易幂等去重。"""
+    session_id: str
+    version: int
+    changes: list[FieldChange] = []
+    reject_reason: str | None = None
+    idempotency_key: str
+
+
 class AuditLogEntry(BaseModel):
     session_id: str
     operator_name: str
@@ -111,6 +118,27 @@ class ReviewResponse(BaseModel):
     change_count: int
     bad_case_count: int
     next_status: str
+
+
+class ConfirmResponse(BaseModel):
+    """确认提交响应 — 新增 sync_status 表示销售易同步状态。"""
+    review_id: str
+    workorder_id: str
+    status: Literal["confirmed", "rejected"]
+    change_count: int
+    bad_case_count: int
+    next_status: str
+    sync_status: Literal["pending", "synced", "failed"] = "pending"
+
+
+class StashRequest(BaseModel):
+    """暂存请求 — 保存当前审核进度到服务端。"""
+    field_states: dict[str, Any] = {}  # fieldId → {currentValue, status, changeReason, ...}
+    notes: str = ""
+
+
+class StashResponse(BaseModel):
+    status: str  # "ok"
 
 
 class LockStatus(BaseModel):

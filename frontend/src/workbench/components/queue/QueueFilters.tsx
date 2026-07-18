@@ -133,11 +133,6 @@ export function QueueFilters() {
       {/* 切换型筛选 */}
       <div className="flex flex-wrap gap-1">
         <ToggleFilter
-          active={filters.lowConfidence}
-          onClick={() => setFilters({ lowConfidence: !filters.lowConfidence })}
-          label="仅低置信度"
-        />
-        <ToggleFilter
           active={filters.validationError}
           onClick={() => setFilters({ validationError: !filters.validationError })}
           label="仅校验异常"

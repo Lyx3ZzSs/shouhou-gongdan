@@ -13,7 +13,7 @@ Key design decisions:
 
 import os
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -117,6 +117,7 @@ async def engine():
                 last_reject_reason TEXT,
                 last_rejected_by VARCHAR(64),
                 last_rejected_at DATETIME,
+                sync_status VARCHAR(16) DEFAULT 'pending',
                 station_name VARCHAR(255),
                 project_province VARCHAR(255),
                 problem_description TEXT,
@@ -141,7 +142,6 @@ async def engine():
                 old_value TEXT,
                 new_value TEXT,
                 change_type VARCHAR(16) NOT NULL DEFAULT 'replace',
-                ai_confidence NUMERIC(5,4),
                 operator_id VARCHAR(64) NOT NULL,
                 operator_name VARCHAR(64),
                 operated_at DATETIME NOT NULL
@@ -173,7 +173,6 @@ async def engine():
                 field_path VARCHAR(128) NOT NULL,
                 ai_value TEXT,
                 human_value TEXT,
-                ai_confidence NUMERIC(5,4),
                 sample_status VARCHAR(16) NOT NULL DEFAULT 'pending',
                 source VARCHAR(16) NOT NULL DEFAULT 'review_correction',
                 created_at DATETIME NOT NULL
@@ -216,9 +215,17 @@ async def client(mock_user, engine):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Patch LockService.release to a no-op so the integration tests don't
-    # require a running Redis instance.
-    with patch("app.services.lock_service.LockService.release"):
+    # Mock lock service to avoid a running Redis instance:
+    # - release: no-op (called by ReviewService.confirm)
+    # - get_owner: return mock_user as the lock holder
+    mock_lock = MagicMock()
+    mock_lock.get_owner = AsyncMock(return_value={
+        "operator_id": mock_user.user_id,
+        "operator_name": mock_user.name,
+        "locked_at": "2026-07-18T10:00:00+00:00",
+    })
+    with patch("app.routers.review.get_lock_service", return_value=mock_lock), \
+         patch("app.services.lock_service.LockService.release"):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -251,7 +258,6 @@ class TestReviewConfirmFlow:
                     "field_label": "问题分类",
                     "old_value": "数据问题",
                     "new_value": "工程问题",
-                    "ai_confidence": 0.72,
                 },
                 {
                     "op": "replace",
@@ -259,7 +265,6 @@ class TestReviewConfirmFlow:
                     "field_label": "受理单级别",
                     "old_value": "P3",
                     "new_value": "P2",
-                    "ai_confidence": 0.88,
                 },
             ],
             "reject_reason": None,
@@ -373,7 +378,6 @@ class TestReviewIdempotency:
                     "field_label": "问题分类",
                     "old_value": "数据问题",
                     "new_value": "工程问题",
-                    "ai_confidence": 0.72,
                 },
             ],
             "reject_reason": None,

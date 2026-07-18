@@ -8,7 +8,6 @@ def test_field_change_valid():
         field_label="问题分类",
         old_value="数据问题",
         new_value="工程问题",
-        ai_confidence=0.72,
     )
     assert fc.op == "replace"
     assert fc.old_value == "数据问题"
@@ -21,7 +20,7 @@ def test_review_request_confirm():
             FieldChange(
                 op="replace", path="/problem_category_l1",
                 field_label="问题分类", old_value="数据问题",
-                new_value="工程问题", ai_confidence=0.72,
+                new_value="工程问题",
             )
         ],
         reject_reason=None,

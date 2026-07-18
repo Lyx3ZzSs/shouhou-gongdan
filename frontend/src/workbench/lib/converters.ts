@@ -116,7 +116,6 @@ const FIELD_MAPPING: FieldMapping[] = [
   { backendKey: 'last_reject_reason', id: 'last_reject_reason', name: '上次驳回原因', group: 'system', type: 'textarea', readonly: true },
   { backendKey: 'last_rejected_by', id: 'last_rejected_by', name: '上次驳回人', group: 'system', type: 'text', readonly: true },
   { backendKey: 'last_rejected_at', id: 'last_rejected_at', name: '上次驳回时间', group: 'system', type: 'datetime', readonly: true },
-  { backendKey: 'ai_confidence', id: 'ai_confidence', name: 'AI 置信度', group: 'system', type: 'number', readonly: true },
 ];
 
 const MAPPING_BY_KEY: Record<string, FieldMapping> = {};
@@ -137,6 +136,7 @@ export function workOrderSummaryToQueueItem(
     serialNumber: summary.serial_number ?? '',
     title: summary.station_name ?? summary.customer_name ?? '未知工单',
     type: '',
+    source: '',
     riskLevel: 'medium',
     status,
     anomalyCount: 0,
@@ -178,7 +178,6 @@ export function workOrderDataToReviewTicket(
     status: normalizeStatus(data.status) as ReviewTicket['status'],
     createdAt: data.created_at ?? nowIso(),
     slaRemainingMin: computeSlaMinutes(data.required_solve_time),
-    systemConfidence: data.ai_confidence != null ? Math.round(data.ai_confidence * 100) : 50,
     reviewer: '',
     version: data.version,
     fields,
@@ -197,7 +196,6 @@ function buildFieldDefs(data: GeneratedWorkOrderResponse): FieldDef[] {
       group: m.group,
       originalValue,
       systemSuggestion: undefined,
-      confidence: null,
       required: m.required,
       type: m.type,
       options: m.options ? [...m.options] : undefined,
@@ -231,29 +229,6 @@ export function generateAnomalies(
         message: `${m.name}未填写（必填字段）`,
       });
     }
-
-    // AI 置信度低于 0.6 且非只读字段 → warning
-    if (
-      !m.readonly &&
-      data.ai_confidence != null &&
-      data.ai_confidence < 0.6
-    ) {
-      anomalies.push({
-        id: `anomaly-${idx++}`,
-        type: 'warning',
-        fieldId: m.id,
-        message: `${m.name} 的 AI 置信度较低 (${Math.round(data.ai_confidence * 100)}%)，请重点审核`,
-      });
-    }
-  }
-
-  // 整体 AI 置信度低 → 全局 warning
-  if (data.ai_confidence != null && data.ai_confidence < 0.6) {
-    anomalies.push({
-      id: `anomaly-${idx++}`,
-      type: 'warning',
-      message: `整体 AI 置信度仅 ${Math.round(data.ai_confidence * 100)}%，请仔细审核`,
-    });
   }
 
   return anomalies;
@@ -316,7 +291,6 @@ export function changeRecordToFieldChange(record: ChangeLike): FieldChange {
     field_label: record.fieldName,
     old_value: record.before,
     new_value: record.after,
-    ai_confidence: null,
   };
 }
 

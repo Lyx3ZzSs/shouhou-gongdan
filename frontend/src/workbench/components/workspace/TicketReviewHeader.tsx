@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RiskTag } from '../primitives/RiskTag';
 import { SLACountdown } from '../primitives/SLACountdown';
-import { ConfidenceBar } from '../primitives/ConfidenceBar';
 import { useReviewStore } from '../../store/useReviewStore';
 import { formatDateTime } from '../../lib/format';
 
@@ -68,9 +67,6 @@ export function TicketReviewHeader() {
         <span>创建：{formatDateTime(ticket.createdAt)}</span>
         <span className="inline-flex items-center gap-1">
           SLA：<SLACountdown remainingMin={ticket.slaRemainingMin} />
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          系统置信度：<ConfidenceBar value={ticket.systemConfidence} className="w-8" />
         </span>
         <span className="inline-flex items-center gap-1">
           <UserCircle2 className="h-3.5 w-3.5" />

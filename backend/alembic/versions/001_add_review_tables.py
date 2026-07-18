@@ -42,6 +42,9 @@ def upgrade() -> None:
     op.add_column('workorder',
         sa.Column('last_rejected_at', sa.DateTime(), nullable=True)
     )
+    op.add_column('workorder',
+        sa.Column('sync_status', sa.String(length=16), nullable=False, server_default='pending')
+    )
     op.create_table('workorder_audit_log',
     sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('workorder_id', sa.String(length=64), nullable=False),
@@ -51,7 +54,6 @@ def upgrade() -> None:
     sa.Column('old_value', sa.Text(), nullable=True),
     sa.Column('new_value', sa.Text(), nullable=True),
     sa.Column('change_type', sa.String(length=16), nullable=False),
-    sa.Column('ai_confidence', sa.DECIMAL(precision=5, scale=4), nullable=True),
     sa.Column('operator_id', sa.String(length=64), nullable=False),
     sa.Column('operator_name', sa.String(length=64), nullable=True),
     sa.Column('operated_at', sa.DateTime(), nullable=False),
@@ -68,7 +70,6 @@ def upgrade() -> None:
     sa.Column('field_path', sa.String(length=128), nullable=False),
     sa.Column('ai_value', sa.Text(), nullable=True),
     sa.Column('human_value', sa.Text(), nullable=True),
-    sa.Column('ai_confidence', sa.DECIMAL(precision=5, scale=4), nullable=True),
     sa.Column('sample_status', sa.String(length=16), nullable=False),
     sa.Column('source', sa.String(length=16), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -98,4 +99,5 @@ def downgrade() -> None:
     op.drop_column('workorder', 'reviewed_by')
     op.drop_column('workorder', 'reviewed_at')
     op.drop_column('workorder', 'version')
+    op.drop_column('workorder', 'sync_status')
     # ### end Alembic commands ###

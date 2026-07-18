@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DECIMAL, DateTime, Index
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Index
 from datetime import datetime
 
 from .base import Base
@@ -15,7 +15,6 @@ class WorkOrderAuditLog(Base):
     old_value = Column(Text, nullable=True)
     new_value = Column(Text, nullable=True)
     change_type = Column(String(16), nullable=False, default="replace")
-    ai_confidence = Column(DECIMAL(5, 4), nullable=True)
     operator_id = Column(String(64), nullable=False)
     operator_name = Column(String(64), nullable=True)
     # NOTE: For MySQL 8.0 production with millisecond precision, use:

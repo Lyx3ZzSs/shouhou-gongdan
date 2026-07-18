@@ -20,7 +20,6 @@ import type {
 } from '../types';
 import {
   DEFAULT_SAVED_VIEWS,
-  LOW_CONFIDENCE_THRESHOLD,
 } from '../lib/constants';
 import { nowIso, valuesEqual } from '../lib/format';
 import { CONFLICT_DEMO } from '../mock/mockData';
@@ -28,7 +27,7 @@ import {
   fetchWorkOrderList,
   fetchWorkOrder,
   fetchAuditLogs,
-  submitReview,
+  fetchConfirm,
   ConflictError,
 } from '../../api/review';
 import {
@@ -51,7 +50,6 @@ function uid(prefix = 'id'): string {
 function computeBaseline(field: FieldDef, anomalies: Anomaly[]): FieldReviewStatus {
   const linked = anomalies.filter((a) => a.fieldId === field.id);
   if (linked.some((a) => a.type === 'blocking_error')) return 'blocking_error';
-  if (field.confidence != null && field.confidence < LOW_CONFIDENCE_THRESHOLD) return 'low_confidence';
   if (linked.some((a) => a.type === 'warning')) return 'warning';
   return 'unchecked';
 }
@@ -105,11 +103,10 @@ function matchFilters(item: QueueItem, f: QueueFilters): boolean {
   if (f.status !== 'all' && item.status !== f.status) return false;
   if (f.risk !== 'all' && item.riskLevel !== f.risk) return false;
   if (f.type !== 'all' && item.type !== f.type) return false;
-  if (f.source !== 'all' && item.type !== f.source) return false; // 简化：来源用类型维度示意
+  if (f.source !== 'all' && item.source !== f.source) return false;
   if (f.sla === 'warning' && item.slaRemainingMin > 60) return false;
   if (f.sla === 'timeout' && item.slaRemainingMin >= 0) return false;
   if (f.sla === 'normal' && item.slaRemainingMin <= 60) return false;
-  if (f.lowConfidence && !item.hasLowConfidence) return false;
   if (f.validationError && !item.hasValidationError) return false;
   if (f.modified && !item.modified) return false;
   if (f.keyword) {
@@ -147,8 +144,10 @@ interface ReviewStore {
   autoSaveStatus: AutoSaveStatus;
   conflict: ConflictInfo | null;
   beingEditedBy: string | null;
+  lockState: 'acquiring' | 'locked' | 'lost';  // F2: 锁丢失强阻塞
   dirty: boolean;
   pendingSwitchId: string | null;
+  currentLoadId: number;  // F4: 切单竞态保护
 
   // 决策/提交
   decision: ReviewDecision | null;
@@ -209,6 +208,7 @@ interface ReviewStore {
   locateField: (fieldId: string) => void;
   jumpToNextAnomaly: () => void;
   setAutoSaveStatus: (s: AutoSaveStatus) => void;
+  setLockState: (s: 'acquiring' | 'locked' | 'lost') => void;  // F2
 }
 
 const defaultFilters: QueueFilters = {
@@ -217,7 +217,6 @@ const defaultFilters: QueueFilters = {
   type: 'all',
   source: 'all',
   sla: 'all',
-  lowConfidence: false,
   validationError: false,
   modified: false,
   keyword: '',
@@ -243,8 +242,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   sessionId: '',
   conflict: null,
   beingEditedBy: null,
+  lockState: 'acquiring',
   dirty: false,
   pendingSwitchId: null,
+  currentLoadId: 0,
 
   decision: null,
   submitDialogOpen: false,
@@ -308,12 +309,16 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   cancelSwitch: () => set({ pendingSwitchId: null }),
 
   loadTicketById: async (id) => {
-    set({ ticketLoading: true, error: null });
+    // F4: 切单竞态保护 — 记录请求序列号，丢弃过期响应
+    const reqId = get().currentLoadId + 1;
+    set({ ticketLoading: true, error: null, currentLoadId: reqId });
     try {
       const [data, sessions] = await Promise.all([
         fetchWorkOrder(id),
         fetchAuditLogs(id).catch(() => []),
       ]);
+      // 丢弃过期响应
+      if (reqId !== get().currentLoadId) return;
       const auditEntries = auditLogSessionsToEntries(sessions);
       const ticket = workOrderDataToReviewTicket(data, auditEntries);
 
@@ -358,6 +363,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   setFieldValue: (fieldId, value, reason) => {
+    // F2: 锁丢失时禁止编辑
+    if (get().lockState === 'lost') return;
     const { ticket, fieldStates } = get();
     if (!ticket) return;
     const field = ticket.fields.find((f) => f.id === fieldId);
@@ -499,6 +506,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     })),
 
   stash: () => {
+    // F2: 锁丢失时禁止暂存
+    if (get().lockState === 'lost') return;
     set((s) => ({
       autoSaveStatus: 'saved',
       dirty: false,
@@ -520,13 +529,18 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   closeSubmitDialog: () => set({ submitDialogOpen: false, submitting: false }),
 
   submit: async (decision, openNext) => {
+    // F2: 锁丢失时禁止提交
+    if (get().lockState === 'lost') {
+      set({ error: '编辑锁已丢失，请刷新页面后重新审核' });
+      return;
+    }
     set({ submitting: true, error: null });
     const { ticket, fieldStates, changeLog, queue, filters, selectedId, processedCount, notes, sessionId } = get();
     if (!ticket) return;
 
     const decisionLabel: Record<ReviewDecision, string> = {
-      approved: '审核通过',
-      approved_with_changes: '修改后通过',
+      approved: '确认通过',
+      approved_with_changes: '修改后确认',
       returned: '退回补充',
       rejected: '驳回',
       transferred: '转交复核',
@@ -561,11 +575,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       const apiChanges = effectiveChanges.map(changeRecordToFieldChange);
       const isReject = decision === 'returned' || decision === 'rejected';
 
-      await submitReview(ticket.id, {
+      await fetchConfirm(ticket.id, {
         session_id: sessionId,
         version: ticket.version,
         changes: apiChanges,
         reject_reason: isReject ? (notes || '无备注') : null,
+        idempotency_key: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       });
 
       // 计算下一条
@@ -618,18 +633,40 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
 
   clearSubmittedToast: () => set({ submittedToast: null }),
 
-  resolveConflict: (mode) => {
+  resolveConflict: async (mode) => {
+    const id = get().selectedId;
     if (mode === 'discard') {
       // 放弃我的修改：重新加载工单（最新版本）
-      const id = get().selectedId;
       set({ conflict: null, dirty: false });
       if (id) get().loadTicketById(id);
     } else {
-      // 使用最新版本并合并：保留我的当前修改，仅提升版本号、关闭弹窗
-      set((s) => ({
-        conflict: null,
-        ticket: s.ticket ? { ...s.ticket, version: (s.conflict?.theirVersion ?? s.ticket.version) + 1 } : s.ticket,
-      }));
+      // merge：re-fetch 最新版本，覆盖 originalValue，保留我的 currentValue
+      set({ ticketLoading: true });
+      try {
+        const latest = await fetchWorkOrder(id!);
+        const latestTicket = workOrderDataToReviewTicket(latest, get().auditLogs);
+        const latestFields = new Map(latestTicket.fields.map((f) => [f.id, f.originalValue]));
+        set((s) => {
+          if (!s.ticket) return { conflict: null, ticketLoading: false };
+          const mergedVersion = (s.conflict?.theirVersion ?? s.ticket.version) + 1;
+          const mergedFields = s.ticket.fields.map((f) => ({
+            ...f,
+            originalValue: latestFields.has(f.id) ? latestFields.get(f.id) : f.originalValue,
+          }));
+          return {
+            conflict: null,
+            ticketLoading: false,
+            ticket: { ...s.ticket, version: mergedVersion, fields: mergedFields },
+          };
+        });
+      } catch {
+        // re-fetch 失败降级为简单 version bump
+        set((s) => ({
+          conflict: null,
+          ticketLoading: false,
+          ticket: s.ticket ? { ...s.ticket, version: (s.conflict?.theirVersion ?? s.ticket.version) + 1 } : s.ticket,
+        }));
+      }
     }
   },
   triggerConflictDemo: () => set({ conflict: CONFLICT_DEMO }),
@@ -656,6 +693,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     get().locateField(after ?? fieldIds[0]);
   },
   setAutoSaveStatus: (s) => set({ autoSaveStatus: s }),
+  setLockState: (s) => set({ lockState: s }),
 }));
 
 // ---------------------------------------------------------------------------

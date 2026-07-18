@@ -57,7 +57,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // 在表单元素内：仅 Enter(input) 确认当前编辑字段，其余不拦截
+      // 在表单元素内：仅 Enter(input) 退出编辑模式，其余不拦截
       if (isFormEl(e.target)) {
         if (
           e.key === 'Enter' &&
@@ -65,12 +65,12 @@ export function useKeyboardShortcuts() {
           (e.target as HTMLElement).tagName === 'INPUT'
         ) {
           e.preventDefault();
-          st.confirmField(st.editingFieldId);
+          st.setEditingField(null);
         }
         return;
       }
 
-      // 全局：J/K 翻页，Enter 确认
+      // 全局：J/K 翻页，Enter 退出编辑
       if (e.key === 'j' || e.key === 'J') {
         e.preventDefault();
         st.nextTicket();
@@ -79,7 +79,7 @@ export function useKeyboardShortcuts() {
         st.prevTicket();
       } else if (e.key === 'Enter' && st.editingFieldId) {
         e.preventDefault();
-        st.confirmField(st.editingFieldId);
+        st.setEditingField(null);
       }
     }
 

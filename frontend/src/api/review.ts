@@ -77,6 +77,16 @@ export async function releaseLock(id: string): Promise<void> {
   });
 }
 
+export async function stashWorkOrder(
+  id: string, fieldStates: Record<string, unknown>, notes: string
+): Promise<void> {
+  await fetch(`${BASE}/${id}/stash`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ field_states: fieldStates, notes }),
+  });
+}
+
 export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
   const res = await fetch(`${BASE}/${id}/lock`, {
     method: 'PUT',
@@ -85,6 +95,39 @@ export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
   if (res.status === 423) return 'lost';
   if (!res.ok) throw new Error(`心跳失败: ${res.status}`);
   return 'ok';
+}
+
+export interface ConfirmRequest {
+  session_id: string;
+  version: number;
+  changes: { op: string; path: string; field_label: string; old_value?: unknown; new_value?: unknown }[];
+  reject_reason: string | null;
+  idempotency_key: string;
+}
+
+export interface ConfirmResponse {
+  review_id: string;
+  workorder_id: string;
+  status: 'confirmed' | 'rejected';
+  change_count: number;
+  bad_case_count: number;
+  next_status: string;
+  sync_status: 'pending' | 'synced' | 'failed';
+}
+
+export async function fetchConfirm(
+  id: string, body: ConfirmRequest
+): Promise<ConfirmResponse> {
+  const res = await fetch(`${BASE}/${id}/confirm`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    throw new ConflictError((await res.json()).detail);
+  }
+  if (!res.ok) throw new Error(`确认提交失败: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchAuditLogs(id: string): Promise<GeneratedAuditLogEntry[]> {

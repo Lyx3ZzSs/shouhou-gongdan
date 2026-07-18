@@ -33,6 +33,7 @@ import {
 
 export function StickyDecisionBar() {
   const ticket = useReviewStore((s) => s.ticket);
+  const lockState = useReviewStore((s) => s.lockState);
   const prevTicket = useReviewStore((s) => s.prevTicket);
   const nextTicket = useReviewStore((s) => s.nextTicket);
   const stash = useReviewStore((s) => s.stash);
@@ -97,6 +98,16 @@ export function StickyDecisionBar() {
 
         {/* 右侧：审核结论 */}
         <div className="flex items-center gap-1.5">
+          {/* F2: 锁丢失提示 */}
+          {lockState === 'lost' && (
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive"
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              编辑锁已丢失，点击刷新页面
+            </button>
+          )}
           {blockingHint && (
             <button
               onClick={() => blockingFields[0] && locateField(blockingFields[0].fieldId)}
@@ -145,7 +156,7 @@ export function StickyDecisionBar() {
 
           <div className="mx-1 h-6 w-px bg-border" />
 
-          {/* 主 CTA：提交审核 */}
+          {/* 主 CTA：确认提交 */}
           {canSubmit ? (
             <Button
               variant="default"
@@ -154,7 +165,7 @@ export function StickyDecisionBar() {
               onClick={handleSubmitClick}
             >
               <StepForward className="h-4 w-4" />
-              提交审核
+              确认提交
               <ArrowRight className="h-4 w-4" />
             </Button>
           ) : (
@@ -163,7 +174,7 @@ export function StickyDecisionBar() {
                 <span tabIndex={0}>
                   <Button variant="default" size="default" disabled className="gap-1.5">
                     <StepForward className="h-4 w-4" />
-                    提交审核
+                    确认提交
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </span>

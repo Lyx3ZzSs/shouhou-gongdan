@@ -74,6 +74,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workorders/{workorder_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Workorder
+         * @description 确认提交：审核通过后本地落库，后台异步同步至销售易。
+         */
+        post: operations["confirm_workorder_api_workorders__workorder_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workorders/{workorder_id}/audit-logs": {
         parameters: {
             query?: never;
@@ -106,6 +126,52 @@ export interface components {
             /** Changes */
             changes: components["schemas"]["FieldChange"][];
         };
+        /**
+         * ConfirmRequest
+         * @description 确认提交请求 — 新增 idempotency_key 用于销售易幂等去重。
+         */
+        ConfirmRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["FieldChange"][];
+            /** Reject Reason */
+            reject_reason?: string | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
+        /**
+         * ConfirmResponse
+         * @description 确认提交响应 — 新增 sync_status 表示销售易同步状态。
+         */
+        ConfirmResponse: {
+            /** Review Id */
+            review_id: string;
+            /** Workorder Id */
+            workorder_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "confirmed" | "rejected";
+            /** Change Count */
+            change_count: number;
+            /** Bad Case Count */
+            bad_case_count: number;
+            /** Next Status */
+            next_status: string;
+            /**
+             * Sync Status
+             * @default pending
+             * @enum {string}
+             */
+            sync_status: "pending" | "synced" | "failed";
+        };
         /** FieldChange */
         FieldChange: {
             /**
@@ -121,8 +187,6 @@ export interface components {
             old_value?: unknown | null;
             /** New Value */
             new_value?: unknown | null;
-            /** Ai Confidence */
-            ai_confidence?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -210,8 +274,6 @@ export interface components {
             last_rejected_by?: string | null;
             /** Last Rejected At */
             last_rejected_at?: string | null;
-            /** Ai Confidence */
-            ai_confidence?: number | null;
             /** Serial Number */
             serial_number?: string | null;
             /** Created At */
@@ -472,6 +534,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_workorder_api_workorders__workorder_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmResponse"];
                 };
             };
             /** @description Validation Error */

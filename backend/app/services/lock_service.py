@@ -22,9 +22,28 @@ def get_lock_service():
 
 
 class LockService:
+    # Lua 脚本：原子化 release 和 heartbeat，消除 TOCTOU 竞态
+    _RELEASE_SCRIPT = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    else
+        return 0
+    end
+    """
+
+    _HEARTBEAT_SCRIPT = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('expire', KEYS[1], ARGV[2])
+    else
+        return 0
+    end
+    """
+
     def __init__(self):
         self._redis = None
         self._loop_id = None
+        self._release_sha: str | None = None
+        self._heartbeat_sha: str | None = None
 
     @property
     def redis(self):
@@ -36,7 +55,21 @@ class LockService:
         if self._redis is None or self._loop_id != current_loop_id:
             self._redis = aioredis.from_url(settings.REDIS_URL)
             self._loop_id = current_loop_id
+            self._release_sha = None
+            self._heartbeat_sha = None
         return self._redis
+
+    async def _eval_release(self, key: str, value: str) -> int:
+        """执行原子 release Lua 脚本，返回删除的 key 数量。"""
+        if self._release_sha is None:
+            self._release_sha = await self.redis.script_load(self._RELEASE_SCRIPT)
+        return await self.redis.evalsha(self._release_sha, 1, key, value)
+
+    async def _eval_heartbeat(self, key: str, value: str, ttl: int) -> int:
+        """执行原子 heartbeat Lua 脚本，返回 1 表示成功续期。"""
+        if self._heartbeat_sha is None:
+            self._heartbeat_sha = await self.redis.script_load(self._HEARTBEAT_SCRIPT)
+        return await self.redis.evalsha(self._heartbeat_sha, 1, key, value, ttl)
 
     async def acquire(self, workorder_id: str, operator_id: str, operator_name: str) -> dict:
         """获取锁。返回 {locked, owner, locked_minutes?}"""
@@ -60,41 +93,58 @@ class LockService:
             else:
                 # 计算实际锁定分钟数
                 locked_at_dt = datetime.datetime.fromisoformat(locked_at)
-                now = datetime.datetime.now(datetime.UTC)
                 if locked_at_dt.tzinfo is None:
                     locked_at_dt = locked_at_dt.replace(tzinfo=datetime.UTC)
-                elapsed = (now - locked_at_dt).total_seconds()
+                elapsed = (datetime.datetime.now(datetime.UTC) - locked_at_dt).total_seconds()
                 locked_minutes = max(1, int(elapsed / 60) + 1)
                 return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes}
 
-        # 锁在 SET NX 和 GET 之间过期（极端情况），视为可获取
-        value = f"{operator_id}:{operator_name}:{now}"
-        await self.redis.set(key, value, ex=LOCK_TTL)
-        return {"locked": True, "owner": operator_name}
+        # 锁在 SET NX 和 GET 之间过期（极端情况），重试一次 SET NX
+        ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
+        if ok:
+            return {"locked": True, "owner": operator_name}
+        # 仍然失败，返回已锁定
+        return {"locked": False, "owner": "unknown"}
 
     async def release(self, workorder_id: str, operator_id: str) -> None:
-        """释放锁。仅持有者可释放，否则抛出 PermissionError"""
+        """释放锁（原子）。仅持有者可释放，否则抛出 PermissionError"""
         key = f"{LOCK_PREFIX}{workorder_id}"
+        value_prefix = f"{operator_id}:"
+        # 先读当前值构造完整 value（Lua 脚本需要完整匹配）
         existing = await self.redis.get(key)
         if not existing:
             return  # 锁已过期，无需操作
-        owner_id, _, _ = existing.decode().split(":", maxsplit=2)
-        if owner_id != operator_id:
+        value = existing.decode()
+        if not value.startswith(value_prefix):
             raise PermissionError("仅锁持有者可释放")
 
-        await self.redis.delete(key)
+        result = await self._eval_release(key, value)
+        if result == 0:
+            raise PermissionError("锁已被他人获取或已过期")
 
     async def heartbeat(self, workorder_id: str, operator_id: str) -> None:
-        """心跳续期。仅持有者可续期，否则抛出 LockLostError"""
+        """心跳续期（原子）。仅持有者可续期，否则抛出 LockLostError"""
         key = f"{LOCK_PREFIX}{workorder_id}"
+        value_prefix = f"{operator_id}:"
         existing = await self.redis.get(key)
         if not existing:
             raise LockLostError("编辑锁已过期，请刷新页面")
-        owner_id, _, _ = existing.decode().split(":", maxsplit=2)
-        if owner_id != operator_id:
+        value = existing.decode()
+        if not value.startswith(value_prefix):
             raise LockLostError("编辑锁已被他人获取，请刷新页面")
 
-        await self.redis.expire(key, LOCK_TTL)
+        result = await self._eval_heartbeat(key, value, LOCK_TTL)
+        if result == 0:
+            raise LockLostError("编辑锁续期失败，请刷新页面")
+
+    async def get_owner(self, workorder_id: str) -> dict | None:
+        """Return the current lock owner, or None if not locked."""
+        key = f"{LOCK_PREFIX}{workorder_id}"
+        existing = await self.redis.get(key)
+        if not existing:
+            return None
+        owner_id, owner_name, locked_at = existing.decode().split(":", maxsplit=2)
+        return {"operator_id": owner_id, "operator_name": owner_name, "locked_at": locked_at}
 
 
 class LockLostError(Exception):

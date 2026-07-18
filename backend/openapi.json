@@ -1,0 +1,1255 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "After-Sales Work Order Review API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/workorders/{workorder_id}/lock": {
+      "post": {
+        "tags": [
+          "lock"
+        ],
+        "summary": "Acquire Lock",
+        "operationId": "acquire_lock_api_workorders__workorder_id__lock_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "lock"
+        ],
+        "summary": "Release Lock",
+        "operationId": "release_lock_api_workorders__workorder_id__lock_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "lock"
+        ],
+        "summary": "Heartbeat Lock",
+        "operationId": "heartbeat_lock_api_workorders__workorder_id__lock_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workorders": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "List Workorders",
+        "operationId": "list_workorders_api_workorders_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkOrderSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Workorders Api Workorders Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/workorders/{workorder_id}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Get Workorder",
+        "operationId": "get_workorder_api_workorders__workorder_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workorders/{workorder_id}/review": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Review Workorder",
+        "operationId": "review_workorder_api_workorders__workorder_id__review_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workorders/{workorder_id}/confirm": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Confirm Workorder",
+        "description": "确认提交：审核通过后本地落库，后台异步同步至销售易。",
+        "operationId": "confirm_workorder_api_workorders__workorder_id__confirm_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workorders/{workorder_id}/audit-logs": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Get Audit Logs",
+        "operationId": "get_audit_logs_api_workorders__workorder_id__audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogEntry"
+                  },
+                  "title": "Response Get Audit Logs Api Workorders  Workorder Id  Audit Logs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditLogEntry": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "operator_name": {
+            "type": "string",
+            "title": "Operator Name"
+          },
+          "operated_at": {
+            "type": "string",
+            "title": "Operated At"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "operator_name",
+          "operated_at",
+          "changes"
+        ],
+        "title": "AuditLogEntry"
+      },
+      "ConfirmRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "type": "array",
+            "title": "Changes",
+            "default": []
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "Idempotency Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "version",
+          "idempotency_key"
+        ],
+        "title": "ConfirmRequest",
+        "description": "确认提交请求 — 新增 idempotency_key 用于销售易幂等去重。"
+      },
+      "ConfirmResponse": {
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "title": "Review Id"
+          },
+          "workorder_id": {
+            "type": "string",
+            "title": "Workorder Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "change_count": {
+            "type": "integer",
+            "title": "Change Count"
+          },
+          "bad_case_count": {
+            "type": "integer",
+            "title": "Bad Case Count"
+          },
+          "next_status": {
+            "type": "string",
+            "title": "Next Status"
+          },
+          "sync_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "synced",
+              "failed"
+            ],
+            "title": "Sync Status",
+            "default": "pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "review_id",
+          "workorder_id",
+          "status",
+          "change_count",
+          "bad_case_count",
+          "next_status"
+        ],
+        "title": "ConfirmResponse",
+        "description": "确认提交响应 — 新增 sync_status 表示销售易同步状态。"
+      },
+      "FieldChange": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "replace",
+              "add",
+              "remove"
+            ],
+            "title": "Op"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "field_label": {
+            "type": "string",
+            "title": "Field Label"
+          },
+          "old_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Value"
+          },
+          "new_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "path",
+          "field_label"
+        ],
+        "title": "FieldChange"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LockStatus": {
+        "properties": {
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "locked_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Minutes"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "LockStatus",
+        "description": "Response for lock acquire / release / heartbeat endpoints."
+      },
+      "ReviewRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "type": "array",
+            "title": "Changes",
+            "default": []
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "version"
+        ],
+        "title": "ReviewRequest"
+      },
+      "ReviewResponse": {
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "title": "Review Id"
+          },
+          "workorder_id": {
+            "type": "string",
+            "title": "Workorder Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "change_count": {
+            "type": "integer",
+            "title": "Change Count"
+          },
+          "bad_case_count": {
+            "type": "integer",
+            "title": "Bad Case Count"
+          },
+          "next_status": {
+            "type": "string",
+            "title": "Next Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "review_id",
+          "workorder_id",
+          "status",
+          "change_count",
+          "bad_case_count",
+          "next_status"
+        ],
+        "title": "ReviewResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkOrderResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "reject_count": {
+            "type": "integer",
+            "title": "Reject Count",
+            "default": 0
+          },
+          "last_reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reject Reason"
+          },
+          "last_rejected_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Rejected By"
+          },
+          "last_rejected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Rejected At"
+          },
+          "serial_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial Number"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "initiator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiator"
+          },
+          "initiator_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiator Department"
+          },
+          "station_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Station Name"
+          },
+          "dispatch_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Name"
+          },
+          "project_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Code"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "project_province": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Province"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "problem_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Description"
+          },
+          "feedback_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Channel"
+          },
+          "product_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line"
+          },
+          "product_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Category"
+          },
+          "product_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Type"
+          },
+          "customer_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Level"
+          },
+          "problem_category_l1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Category L1"
+          },
+          "problem_category_l2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Category L2"
+          },
+          "problem_category_l3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Category L3"
+          },
+          "order_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Type"
+          },
+          "problem_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Type"
+          },
+          "fault_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Category"
+          },
+          "fault_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Detail"
+          },
+          "responsible_person": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Person"
+          },
+          "responsible_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Department"
+          },
+          "primary_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Department"
+          },
+          "after_sales_person": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Sales Person"
+          },
+          "transferred_person": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transferred Person"
+          },
+          "transferred_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transferred Department"
+          },
+          "order_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Level"
+          },
+          "fault_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Level"
+          },
+          "onsite_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onsite Level"
+          },
+          "required_solve_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Solve Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "WorkOrderResponse",
+        "description": "Response for GET /api/workorders/{id} — mirrors frontend WorkOrderData."
+      },
+      "WorkOrderSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "serial_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial Number"
+          },
+          "station_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Station Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "WorkOrderSummary",
+        "description": "Summary row for GET /api/workorders list."
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

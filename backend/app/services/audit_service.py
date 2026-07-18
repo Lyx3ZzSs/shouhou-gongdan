@@ -28,7 +28,6 @@ class AuditService:
                 old_value=str(c.old_value) if c.old_value is not None else None,
                 new_value=str(c.new_value) if c.new_value is not None else None,
                 change_type=c.op,
-                ai_confidence=c.ai_confidence,
                 operator_id=operator_id,
                 operator_name=operator_name,
                 operated_at=now,

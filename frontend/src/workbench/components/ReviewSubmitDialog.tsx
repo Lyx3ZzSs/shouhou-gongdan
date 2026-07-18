@@ -53,10 +53,10 @@ export function ReviewSubmitDialog() {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            提交审核
+            确认提交
             <Badge variant={meta.variant}>{meta.label}</Badge>
           </DialogTitle>
-          <DialogDescription>请确认本次审核摘要，提交后将记录完整审计日志。</DialogDescription>
+          <DialogDescription>确认后工单将同步至销售易系统，可在队列中查看同步状态。</DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">

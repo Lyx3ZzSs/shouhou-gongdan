@@ -7,9 +7,6 @@ import type {
   SavedView,
 } from '../types';
 
-/** 低置信度阈值（%） */
-export const LOW_CONFIDENCE_THRESHOLD = 60;
-
 /** 字段分组（按业务审核逻辑顺序） */
 export const FIELD_GROUPS: { id: FieldGroupId; name: string }[] = [
   { id: 'basic', name: '基本信息' },
@@ -55,7 +52,6 @@ export const STATUS_META: Record<
   unchecked: { label: '未检查', variant: 'muted' },
   confirmed: { label: '已确认', variant: 'success' },
   modified: { label: '已修改', variant: 'default' },
-  low_confidence: { label: '低置信度', variant: 'warning' },
   warning: { label: '校验异常', variant: 'warning' },
   blocking_error: { label: '阻断错误', variant: 'destructive' },
 };
@@ -76,8 +72,8 @@ export const DECISION_META: Record<
   ReviewDecision,
   { label: string; variant: 'success' | 'default' | 'warning' | 'destructive' | 'secondary' | 'muted' }
 > = {
-  approved: { label: '直接通过', variant: 'success' },
-  approved_with_changes: { label: '修改后通过', variant: 'default' },
+  approved: { label: '确认通过', variant: 'success' },
+  approved_with_changes: { label: '修改后确认', variant: 'default' },
   returned: { label: '退回补充', variant: 'warning' },
   rejected: { label: '驳回', variant: 'destructive' },
   transferred: { label: '转交复核', variant: 'secondary' },
@@ -138,6 +134,5 @@ export const DEFAULT_SAVED_VIEWS: SavedView[] = [
   { id: 'mine', name: '我的待审核', filters: { status: 'pending_review' } },
   { id: 'high_risk', name: '高风险工单', filters: { risk: 'high' } },
   { id: 'near_timeout', name: '即将超时', filters: { sla: 'warning' } },
-  { id: 'low_conf', name: '低置信度工单', filters: { lowConfidence: true } },
   { id: 'returned', name: '退回后重新提交', filters: { status: 'returned' } },
 ];

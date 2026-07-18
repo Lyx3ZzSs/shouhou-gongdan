@@ -4,7 +4,7 @@ export interface FieldChange {
   field_label: string;
   old_value: unknown;
   new_value: unknown;
-  ai_confidence: number | null;
+  ai_confidence?: number | null;
 }
 
 export interface ReviewRequest {
@@ -31,7 +31,7 @@ export interface WorkOrderData {
   last_reject_reason: string | null;
   last_rejected_by: string | null;
   last_rejected_at: string | null;
-  ai_confidence: number | null;
+  ai_confidence?: number | null;
   // 核心字段
   station_name: string;
   dispatch_name: string;

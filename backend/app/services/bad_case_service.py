@@ -23,7 +23,6 @@ class BadCaseService:
                 field_path=c.path,
                 ai_value=str(c.old_value) if c.old_value is not None else None,
                 human_value=str(c.new_value) if c.new_value is not None else None,
-                ai_confidence=c.ai_confidence,
                 sample_status="pending",
                 source="review_correction",
                 created_at=now,

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, DECIMAL
+from sqlalchemy import Column, Integer, String, DateTime, Text
 
 from .base import Base
 
@@ -12,7 +12,7 @@ class WorkOrder(Base):
     # 生产环境迁移请务必使用手动编写的迁移脚本，而非 autogenerate。
 
     # Primary key
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(64), primary_key=True)
 
     # Review / audit tracking
     version = Column(Integer, default=1, nullable=False)
@@ -22,7 +22,8 @@ class WorkOrder(Base):
     last_reject_reason = Column(Text, nullable=True)
     last_rejected_by = Column(String(64), nullable=True)
     last_rejected_at = Column(DateTime, nullable=True)
-    ai_confidence = Column(DECIMAL(5, 4), nullable=True)
+    sync_status = Column(String(16), nullable=False, default='pending')
+    # 'pending' | 'synced' | 'failed' — 销售易同步状态
 
     # Read-only metadata
     serial_number = Column(String(64), nullable=True)

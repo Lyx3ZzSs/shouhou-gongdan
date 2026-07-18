@@ -1,5 +1,5 @@
-import { useMemo, useCallback } from 'react';
-import { CheckCheck, ChevronRight } from 'lucide-react';
+import { useMemo } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FieldReviewRow } from './FieldReviewRow';
@@ -18,7 +18,6 @@ export function FieldGroup({
   const expanded = useReviewStore((s) => s.expandedGroups[group.id] ?? false);
   const toggleGroup = useReviewStore((s) => s.toggleGroup);
   const fieldStates = useReviewStore((s) => s.fieldStates);
-  const confirmField = useReviewStore((s) => s.confirmField);
   const ticket = useReviewStore((s) => s.ticket);
 
   const allGroupFields = useMemo(
@@ -34,23 +33,6 @@ export function FieldGroup({
   const modifiedCount = allGroupFields.filter(
     (f) => fieldStates[f.id]?.status === 'modified',
   ).length;
-
-  // 本组中尚未确认的字段
-  const unconfirmedCount = allGroupFields.filter(
-    (f) => {
-      const st = fieldStates[f.id];
-      return st && st.status !== 'confirmed' && st.status !== 'modified';
-    },
-  ).length;
-
-  const confirmAll = useCallback(() => {
-    for (const f of allGroupFields) {
-      const st = fieldStates[f.id];
-      if (st && st.status !== 'confirmed' && st.status !== 'modified') {
-        confirmField(f.id);
-      }
-    }
-  }, [allGroupFields, fieldStates, confirmField]);
 
   return (
     <div>
@@ -82,17 +64,6 @@ export function FieldGroup({
           </Badge>
         )}
         <div className="flex-1" />
-        {unconfirmedCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 text-xs text-muted-foreground hover:text-success"
-            onClick={confirmAll}
-          >
-            <CheckCheck className="h-3 w-3" />
-            本组全部确认
-          </Button>
-        )}
         <button
           onClick={() => toggleGroup(group.id)}
           className="text-xs text-muted-foreground hover:text-foreground"
