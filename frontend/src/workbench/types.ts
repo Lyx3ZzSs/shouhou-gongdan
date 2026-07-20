@@ -11,9 +11,7 @@ export type FieldReviewStatus =
 export type ReviewDecision =
   | 'approved'
   | 'approved_with_changes'
-  | 'returned'
   | 'rejected'
-  | 'transferred'
   | 'draft';
 
 export type RiskLevel = 'high' | 'medium' | 'low';

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, FileEdit, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,12 +35,35 @@ export function ReviewSubmitDialog() {
   const progress = useReviewProgress();
   const unresolved = useUnresolvedAnomalies();
   const [openNext, setOpenNext] = useState(false);
+  const [showNotesError, setShowNotesError] = useState(false);
+
+  // Reset error state when decision or notes change
+  useEffect(() => {
+    setShowNotesError(false);
+  }, [decision]);
+  useEffect(() => {
+    if (open) setShowNotesError(false);
+  }, [open]);
+  useEffect(() => {
+    if (notes?.trim()) {
+      setShowNotesError(false);
+    }
+  }, [notes]);
 
   if (!decision) return null;
 
   const meta = DECISION_META[decision];
   const totalAnomalies = ticket?.anomalies.length ?? 0;
   const handled = totalAnomalies - unresolved.length;
+
+  const handleSubmit = () => {
+    if (decision === 'rejected' && !notes?.trim()) {
+      setShowNotesError(true);
+      return;
+    }
+    setShowNotesError(false);
+    submit(decision, openNext);
+  };
 
   // 修改原因汇总
   const reasonSummary = new Map<string, number>();
@@ -134,13 +157,24 @@ export function ReviewSubmitDialog() {
 
           {/* 审核备注 */}
           <section>
-            <div className="mb-1.5 text-sm font-medium">审核备注</div>
+            <div className="mb-1.5 text-sm font-medium">
+              审核备注
+              {decision === 'rejected' && <span className="text-destructive ml-0.5">*</span>}
+            </div>
             <Textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="填写审核备注…"
-              className="min-h-[64px]"
+              onChange={(e) => {
+                setNotes(e.target.value);
+                if (showNotesError && e.target.value.trim()) {
+                  setShowNotesError(false);
+                }
+              }}
+              placeholder={decision === 'rejected' ? '驳回时必须填写审核备注…' : '填写审核备注…'}
+              className={`min-h-[64px] ${showNotesError ? 'border-destructive' : ''}`}
             />
+            {showNotesError && (
+              <p className="mt-1 text-xs text-destructive">驳回时必须填写审核备注</p>
+            )}
           </section>
 
           {/* 进度摘要 */}
@@ -163,7 +197,7 @@ export function ReviewSubmitDialog() {
             <Button variant="outline" onClick={closeSubmitDialog} disabled={submitting}>
               取消
             </Button>
-            <Button onClick={() => submit(decision, openNext)} disabled={submitting}>
+            <Button onClick={handleSubmit} disabled={submitting}>
               {submitting ? '提交中…' : `提交（${meta.label}）`}
             </Button>
           </div>

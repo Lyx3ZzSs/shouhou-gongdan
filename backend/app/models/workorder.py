@@ -22,6 +22,7 @@ class WorkOrder(Base):
     last_reject_reason = Column(Text, nullable=True)
     last_rejected_by = Column(String(64), nullable=True)
     last_rejected_at = Column(DateTime, nullable=True)
+    review_notes = Column(Text, nullable=True)
     sync_status = Column(String(16), nullable=False, default='pending')
     # 'pending' | 'synced' | 'failed' — 销售易同步状态
 

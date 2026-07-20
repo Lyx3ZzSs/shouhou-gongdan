@@ -28,6 +28,9 @@ import {
   fetchWorkOrder,
   fetchAuditLogs,
   fetchConfirm,
+  stashWorkOrder,
+  fetchStashData,
+  deleteStashData,
   ConflictError,
 } from '../../api/review';
 import {
@@ -46,6 +49,17 @@ function uid(prefix = 'id'): string {
 // ---------------------------------------------------------------------------
 // 纯函数：派生计算
 // ---------------------------------------------------------------------------
+
+const VALID_FIELD_STATUSES: readonly FieldReviewStatus[] = [
+  'unchecked', 'confirmed', 'modified', 'warning', 'blocking_error',
+];
+
+function parseFieldReviewStatus(s: unknown): FieldReviewStatus {
+  if (typeof s === 'string' && (VALID_FIELD_STATUSES as readonly string[]).includes(s)) {
+    return s as FieldReviewStatus;
+  }
+  return 'unchecked';
+}
 
 function computeBaseline(field: FieldDef, anomalies: Anomaly[]): FieldReviewStatus {
   const linked = anomalies.filter((a) => a.fieldId === field.id);
@@ -127,7 +141,6 @@ interface ReviewStore {
   filters: QueueFilters;
   savedViews: SavedView[];
   selectedId: string | null;
-  processedCount: number;
 
   // 当前工单
   ticket: ReviewTicket | null;
@@ -171,7 +184,7 @@ interface ReviewStore {
   setFilters: (patch: Partial<QueueFilters>) => void;
   applySavedView: (view: SavedView) => void;
   selectTicket: (id: string) => void;
-  confirmSwitch: () => void;
+  confirmSwitch: () => Promise<void>;
   cancelSwitch: () => void;
   loadTicketById: (id: string) => Promise<void>;
   prevTicket: () => void;
@@ -188,7 +201,7 @@ interface ReviewStore {
   setNotes: (text: string) => void;
   appendNotePhrase: (phrase: string) => void;
 
-  stash: () => void;
+  stash: () => Promise<void>;
   openSubmitDialog: (decision: ReviewDecision) => void;
   closeSubmitDialog: () => void;
   submit: (decision: ReviewDecision, openNext: boolean) => Promise<void>;
@@ -227,7 +240,6 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   filters: defaultFilters,
   savedViews: DEFAULT_SAVED_VIEWS,
   selectedId: null,
-  processedCount: 0,
 
   ticket: null,
   fieldStates: {},
@@ -301,9 +313,16 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
     get().loadTicketById(id);
   },
-  confirmSwitch: () => {
+  confirmSwitch: async () => {
     const id = get().pendingSwitchId;
+    const currentTicketId = get().ticket?.id;
     set({ pendingSwitchId: null, dirty: false });
+    // 清除自动保存的暂存数据，避免重新打开时恢复"已丢弃"的修改
+    if (currentTicketId) {
+      deleteStashData(currentTicketId).catch((err) => {
+        console.warn('删除暂存数据失败，工单重新打开时可能恢复已丢弃的修改', currentTicketId, err);
+      });
+    }
     if (id) get().loadTicketById(id);
   },
   cancelSwitch: () => set({ pendingSwitchId: null }),
@@ -313,22 +332,40 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const reqId = get().currentLoadId + 1;
     set({ ticketLoading: true, error: null, currentLoadId: reqId });
     try {
-      const [data, sessions] = await Promise.all([
+      const [data, sessions, stashData] = await Promise.all([
         fetchWorkOrder(id),
         fetchAuditLogs(id).catch(() => []),
+        fetchStashData(id).catch(() => null),
       ]);
       // 丢弃过期响应
       if (reqId !== get().currentLoadId) return;
       const auditEntries = auditLogSessionsToEntries(sessions);
       const ticket = workOrderDataToReviewTicket(data, auditEntries);
 
+      // 构建初始字段状态，然后用暂存数据覆盖
+      const baseFieldStates = buildFieldStates(ticket);
+      let restoredNotes = '';
+      if (stashData && stashData.field_states) {
+        restoredNotes = stashData.notes || '';
+        for (const [fieldId, stashed] of Object.entries(stashData.field_states)) {
+          if (baseFieldStates[fieldId] && stashed && typeof stashed === 'object') {
+            baseFieldStates[fieldId] = {
+              ...baseFieldStates[fieldId],
+              currentValue: 'currentValue' in stashed ? stashed.currentValue : baseFieldStates[fieldId].currentValue,
+              status: parseFieldReviewStatus(stashed.status),
+              changeReason: typeof stashed.changeReason === 'string' ? stashed.changeReason : baseFieldStates[fieldId].changeReason,
+            };
+          }
+        }
+      }
+
       set({
         selectedId: id,
         ticket,
-        fieldStates: buildFieldStates(ticket),
+        fieldStates: baseFieldStates,
         changeLog: buildInitialChangeLog(ticket),
         auditLogs: ticket.auditLogs,
-        notes: '',
+        notes: restoredNotes,
         dirty: false,
         expandedGroups: defaultExpandedGroups(ticket),
         fieldFilter: 'all',
@@ -505,24 +542,58 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       autoSaveStatus: 'saving',
     })),
 
-  stash: () => {
+  stash: async () => {
     // F2: 锁丢失时禁止暂存
     if (get().lockState === 'lost') return;
-    set((s) => ({
-      autoSaveStatus: 'saved',
-      dirty: false,
-      submittedToast: '已暂存当前审核进度',
-      auditLogs: [
-        {
-          id: uid('al'),
-          timestamp: nowIso(),
-          category: 'process',
-          actor: '张三',
-          action: '暂存审核进度',
-        },
-        ...s.auditLogs,
-      ],
-    }));
+    const { ticket, fieldStates, notes, queue, filters, selectedId } = get();
+    if (!ticket) return;
+
+    set({ autoSaveStatus: 'saving' });
+    try {
+      const payload = Object.fromEntries(
+        Object.entries(fieldStates).map(([id, fs]) => [
+          id,
+          { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
+        ]),
+      );
+      await stashWorkOrder(ticket.id, payload, notes, 'manual');
+
+      // 计算下一条工单
+      const list = queue.filter((i) => matchFilters(i, filters));
+      const idx = list.findIndex((i) => i.id === selectedId);
+      const nextItem = list[idx + 1] ?? null;
+      const remainingQueue = queue.filter((i) => i.id !== selectedId);
+
+      set((s) => ({
+        autoSaveStatus: 'saved',
+        dirty: false,
+        submittedToast: nextItem
+          ? '已暂存当前审核进度，进入下一条工单'
+          : '已暂存当前审核进度',
+        auditLogs: [
+          {
+            id: uid('al'),
+            timestamp: nowIso(),
+            category: 'process',
+            actor: '张三',
+            action: '暂存审核进度',
+          },
+          ...s.auditLogs,
+        ],
+      }));
+
+      // 自动进入下一条（锁已由后端释放）
+      if (nextItem) {
+        setTimeout(() => {
+          set({ queue: remainingQueue });
+          get().loadTicketById(nextItem.id);
+        }, 50);
+      } else {
+        set({ queue: remainingQueue, ticket: null, queueEmpty: true });
+      }
+    } catch {
+      set({ autoSaveStatus: 'failed', submittedToast: '暂存失败，请重试' });
+    }
   },
 
   openSubmitDialog: (decision) => set({ submitDialogOpen: true, decision }),
@@ -535,15 +606,13 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       return;
     }
     set({ submitting: true, error: null });
-    const { ticket, fieldStates, changeLog, queue, filters, selectedId, processedCount, notes, sessionId } = get();
+    const { ticket, fieldStates, changeLog, queue, filters, selectedId, notes, sessionId } = get();
     if (!ticket) return;
 
     const decisionLabel: Record<ReviewDecision, string> = {
       approved: '确认通过',
       approved_with_changes: '修改后确认',
-      returned: '退回补充',
       rejected: '驳回',
-      transferred: '转交复核',
       draft: '暂存',
     };
 
@@ -557,8 +626,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       detail: notes ? `备注：${notes}` : undefined,
     };
 
-    // draft / transferred → 本地暂存，不调用 API
-    if (decision === 'draft' || decision === 'transferred') {
+    // draft → 本地暂存，不调用 API
+    if (decision === 'draft') {
       set((s) => ({
         auditLogs: [newAudit, ...s.auditLogs],
         submitting: false,
@@ -573,13 +642,14 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     try {
       const effectiveChanges = computeEffectiveChanges(ticket, fieldStates, changeLog);
       const apiChanges = effectiveChanges.map(changeRecordToFieldChange);
-      const isReject = decision === 'returned' || decision === 'rejected';
+      const isReject = decision === 'rejected';
 
       await fetchConfirm(ticket.id, {
         session_id: sessionId,
         version: ticket.version,
         changes: apiChanges,
-        reject_reason: isReject ? (notes || '无备注') : null,
+        reject_reason: isReject ? notes : null,
+        review_notes: notes || null,
         idempotency_key: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       });
 
@@ -593,7 +663,6 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         auditLogs: [newAudit, ...s.auditLogs],
         submitting: false,
         submitDialogOpen: false,
-        processedCount: processedCount + 1,
         dirty: false,
         submittedToast:
           openNext && nextItem
@@ -777,16 +846,6 @@ export function selectUnresolvedAnomalies(state: ReviewStore): Anomaly[] {
   return state.ticket.anomalies.filter((a) => !isAnomalyResolved(a, state.fieldStates));
 }
 
-export function selectQueueStats(state: ReviewStore) {
-  const list = selectFilteredQueue(state);
-  return {
-    pending: list.filter((i) => i.status === 'pending_review' || i.status === 'reviewing').length,
-    nearTimeout: list.filter((i) => i.slaRemainingMin <= 60 && i.slaRemainingMin >= 0).length,
-    stashed: list.filter((i) => i.status === 'stashed').length,
-    processed: state.processedCount,
-  };
-}
-
 export const useFilteredQueue = () => useReviewStore(useShallow(selectFilteredQueue));
 export const useEffectiveChanges = () => {
   const ticket = useReviewStore((s) => s.ticket);
@@ -805,4 +864,3 @@ export const useBlockingFields = () => {
   return useMemo(() => computeBlockingFields(ticket, fieldStates), [ticket, fieldStates]);
 };
 export const useUnresolvedAnomalies = () => useReviewStore(useShallow(selectUnresolvedAnomalies));
-export const useQueueStats = () => useReviewStore(useShallow(selectQueueStats));

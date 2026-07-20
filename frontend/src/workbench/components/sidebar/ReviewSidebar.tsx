@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { useReviewStore } from '../../store/useReviewStore';
 import { CurrentChanges } from './CurrentChanges';
 import { ReviewNotes } from './ReviewNotes';
-import { ReviewProgress } from './ReviewProgress';
 
 export function ReviewSidebar() {
   const toggleRight = useReviewStore((s) => s.toggleRight);
@@ -24,7 +23,6 @@ export function ReviewSidebar() {
       </div>
 
       <div className="flex flex-1 flex-col divide-y divide-border overflow-y-auto">
-        <ReviewProgress />
         <CurrentChanges />
         <ReviewNotes />
       </div>
