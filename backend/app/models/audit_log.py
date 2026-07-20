@@ -17,9 +17,7 @@ class WorkOrderAuditLog(Base):
     change_type = Column(String(16), nullable=False, default="replace")
     operator_id = Column(String(64), nullable=False)
     operator_name = Column(String(64), nullable=True)
-    # NOTE: For MySQL 8.0 production with millisecond precision, use:
-    # from sqlalchemy.dialects.mysql import DATETIME
-    # operated_at = Column(DATETIME(fsp=3), nullable=False, default=datetime.utcnow)
+    # PostgreSQL TIMESTAMP is sufficient for development and production use.
     operated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (

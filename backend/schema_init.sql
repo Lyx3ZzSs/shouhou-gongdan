@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS bad_case_sample (
     created_at      TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_badcase_status    ON bad_case_sample (sample_status);
-CREATE INDEX IF NOT EXISTS idx_badcase_workorder ON bad_case_sample (workorder_id);
+CREATE INDEX IF NOT EXISTS idx_status    ON bad_case_sample (sample_status);
+CREATE INDEX IF NOT EXISTS idx_workorder ON bad_case_sample (workorder_id);
 
 COMMIT;

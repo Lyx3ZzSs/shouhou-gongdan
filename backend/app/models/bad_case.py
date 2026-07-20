@@ -15,9 +15,7 @@ class BadCaseSample(Base):
     human_value = Column(Text, nullable=True)
     sample_status = Column(String(16), nullable=False, default="pending")
     source = Column(String(16), nullable=False, default="review_correction")
-    # NOTE: For MySQL 8.0 production with millisecond precision, use:
-    # from sqlalchemy.dialects.mysql import DATETIME
-    # created_at = Column(DATETIME(fsp=3), nullable=False, default=datetime.utcnow)
+    # PostgreSQL TIMESTAMP is sufficient for development and production use.
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (

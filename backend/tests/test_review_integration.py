@@ -1,46 +1,90 @@
 """End-to-end integration tests for the review confirm/reject/idempotency flow.
 
 Exercises the full stack: FastAPI router -> ReviewService -> database,
-using a real SQLite database (cleaned up after each test).
+using a real PostgreSQL database (test database created/destroyed per session).
+
+Pre-requisites:
+    PostgreSQL must be running (docker compose up -d postgres).
+    The test database 'shouhou_gongdan_test' is created automatically.
 
 Key design decisions:
   - WorkOrder ORM model omits ~132 pre-existing columns, so the workorder
-    table is created via raw SQL to include all field columns needed by tests.
-  - LockService.release() is patched to a no-op to avoid a Redis dependency.
-  - All database operations use raw SQL via text() for both test setup
-    and verification, ensuring the tests match the production service code.
+    table is created via raw SQL to include only the columns needed by tests.
+  - LockService is patched to a no-op to avoid a Redis dependency.
+  - Each test truncates all tables for a clean state.
+  - Test database persists across test functions for speed; cleanup is
+    done at module teardown.
 """
 
-import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import make_url
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.exc import OperationalError
 
 from app.main import app
 from app.auth.dependencies import get_current_user, CurrentUser
 from app.core.database import get_db
+from app.core.config import settings
 
-# Import model classes to register them with Base.metadata before create_all().
-# pylint: disable=wrong-import-position,unused-import
-from app.models.base import Base
-from app.models.audit_log import WorkOrderAuditLog
-from app.models.bad_case import BadCaseSample
-
-DB_PATH = "./test_review_integration.db"
+TEST_DB_NAME = "shouhou_gongdan_test"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _create_workorder(engine, **fields) -> None:
-    """Insert a workorder row via raw SQL.
+def _build_test_db_url() -> str:
+    """Build the PostgreSQL connection URL for the test database."""
+    url = make_url(settings.DATABASE_URL)
+    return str(url.set(database=TEST_DB_NAME))
 
-    Accepts keyword arguments for any column; sensible defaults are
-    provided for the columns used by the tests.
-    """
+
+def _build_admin_db_url() -> str:
+    """Build the PostgreSQL connection URL for the 'postgres' admin database."""
+    url = make_url(settings.DATABASE_URL)
+    return str(url.set(database="postgres"))
+
+
+async def _ensure_test_db() -> None:
+    """Create the test database if it does not already exist."""
+    import asyncpg
+    admin_url = _build_admin_db_url()
+    try:
+        conn = await asyncpg.connect(dsn=admin_url, timeout=5)
+        try:
+            await conn.execute(
+                f'CREATE DATABASE "{TEST_DB_NAME}"'
+            )
+        except asyncpg.DuplicateDatabaseError:
+            pass  # already exists
+        finally:
+            await conn.close()
+    except Exception:
+        # Connection failed — PostgreSQL is likely not running
+        pytest.skip("PostgreSQL is not available — skipping integration tests")
+
+
+async def _drop_test_db() -> None:
+    """Drop the test database."""
+    import asyncpg
+    admin_url = _build_admin_db_url()
+    try:
+        conn = await asyncpg.connect(dsn=admin_url, timeout=5)
+        try:
+            await conn.execute(
+                f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}"'
+            )
+        finally:
+            await conn.close()
+    except Exception:
+        pass  # best-effort cleanup
+
+
+async def _create_workorder(engine, **fields) -> None:
+    """Insert a workorder row via raw SQL."""
     defaults = dict(
         id="WO-E2E-DEFAULT",
         version=1,
@@ -89,34 +133,48 @@ async def _count(engine, table: str, **where) -> int:
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="function")
-async def engine():
-    """Create a real SQLite database and all required tables.
+@pytest.fixture(scope="session")
+def _test_db_session():
+    """Session-scoped: create test database once, drop at end.
 
-    The workorder table is created via raw SQL (the ORM model is incomplete
-    and does not carry the ~132 pre-existing columns).  The audit-log and
-    bad-case tables are created from the ORM models via Base.metadata.
+    This is NOT a pytest fixture returned to tests — it's a setup/teardown
+    hook that runs at session scope.  Tests use the function-scoped
+    ``engine`` fixture below.
     """
-    # Remove leftover from a previous failed run
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    _engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}")
+    loop.run_until_complete(_ensure_test_db())
+    yield
+    loop.run_until_complete(_drop_test_db())
 
+
+@pytest.fixture(scope="function")
+async def engine(_test_db_session):
+    """Create a real PostgreSQL engine and ensure all tables exist.
+
+    Truncates all tables at the start of each test for a clean state.
+    """
+    test_url = _build_test_db_url()
+    _engine = create_async_engine(test_url, echo=False)
+
+    # Ensure tables exist (idempotent — uses IF NOT EXISTS)
     async with _engine.begin() as conn:
-        # The workorder table is created via raw SQL because the ORM model
-        # does not include the majority of pre-existing field columns.
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS workorder (
                 id VARCHAR(64) PRIMARY KEY,
                 version INTEGER DEFAULT 1 NOT NULL,
                 status VARCHAR(32) DEFAULT 'pending_review',
-                reviewed_at DATETIME,
+                reviewed_at TIMESTAMP,
                 reviewed_by VARCHAR(64),
                 reject_count INTEGER DEFAULT 0 NOT NULL,
                 last_reject_reason TEXT,
                 last_rejected_by VARCHAR(64),
-                last_rejected_at DATETIME,
+                last_rejected_at TIMESTAMP,
                 sync_status VARCHAR(16) DEFAULT 'pending',
                 station_name VARCHAR(255),
                 project_province VARCHAR(255),
@@ -129,12 +187,9 @@ async def engine():
                 after_sales_person VARCHAR(255)
             )
         """))
-        # Audit-log and bad-case tables (via raw SQL, not ORM's create_all,
-        # because two models share index name "idx_workorder" which is
-        # allowed in MySQL (per-table namespace) but rejected by SQLite).
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS workorder_audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 workorder_id VARCHAR(64) NOT NULL,
                 session_id VARCHAR(64) NOT NULL,
                 field_path VARCHAR(128) NOT NULL,
@@ -144,54 +199,58 @@ async def engine():
                 change_type VARCHAR(16) NOT NULL DEFAULT 'replace',
                 operator_id VARCHAR(64) NOT NULL,
                 operator_name VARCHAR(64),
-                operated_at DATETIME NOT NULL
+                operated_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_audit_workorder
+            CREATE INDEX IF NOT EXISTS idx_workorder
             ON workorder_audit_log(workorder_id)
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_audit_session
+            CREATE INDEX IF NOT EXISTS idx_session
             ON workorder_audit_log(session_id)
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_audit_operator
+            CREATE INDEX IF NOT EXISTS idx_operator
             ON workorder_audit_log(operator_id)
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_audit_operated_at
+            CREATE INDEX IF NOT EXISTS idx_operated_at
             ON workorder_audit_log(operated_at)
         """))
 
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS bad_case_sample (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 workorder_id VARCHAR(64) NOT NULL,
-                audit_log_id INTEGER NOT NULL
+                audit_log_id BIGINT NOT NULL
                     REFERENCES workorder_audit_log(id),
                 field_path VARCHAR(128) NOT NULL,
                 ai_value TEXT,
                 human_value TEXT,
                 sample_status VARCHAR(16) NOT NULL DEFAULT 'pending',
                 source VARCHAR(16) NOT NULL DEFAULT 'review_correction',
-                created_at DATETIME NOT NULL
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_bc_status
+            CREATE INDEX IF NOT EXISTS idx_status
             ON bad_case_sample(sample_status)
         """))
         await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_bc_workorder
+            CREATE INDEX IF NOT EXISTS idx_workorder
             ON bad_case_sample(workorder_id)
         """))
+
+    # Truncate all tables for a clean test state
+    async with _engine.begin() as conn:
+        await conn.execute(text(
+            "TRUNCATE TABLE bad_case_sample, workorder_audit_log, workorder CASCADE"
+        ))
 
     yield _engine
 
     await _engine.dispose()
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
 
 
 @pytest.fixture
@@ -215,9 +274,7 @@ async def client(mock_user, engine):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Mock lock service to avoid a running Redis instance:
-    # - release: no-op (called by ReviewService.confirm)
-    # - get_owner: return mock_user as the lock holder
+    # Mock lock service to avoid a running Redis instance
     mock_lock = MagicMock()
     mock_lock.get_owner = AsyncMock(return_value={
         "operator_id": mock_user.user_id,
@@ -277,7 +334,6 @@ class TestReviewConfirmFlow:
         assert data["change_count"] == 2
         assert data["bad_case_count"] == 2
         assert data["next_status"] == "dispatching"
-        # review_id should be a non-"dup" identifier
         assert data["review_id"] != "dup"
         assert data["review_id"].startswith("rev-")
 
@@ -315,7 +371,6 @@ class TestReviewRejectFlow:
     async def test_full_reject_flow_no_bad_case(self, client, engine):
         """End-to-end reject: workorder reject_count incremented,
         last_reject_reason set, zero bad_case records created."""
-        # Arrange – create a separate workorder for the reject test
         await _create_workorder(engine, id="WO-E2E-002",
                                 project_province="北京",
                                 problem_description="测试",
@@ -326,7 +381,6 @@ class TestReviewRejectFlow:
                                 after_sales_person="朱莉",
                                 )
 
-        # Act – submit a reject review with a reason
         resp = await client.post("/api/workorders/WO-E2E-002/review", json={
             "session_id": "e2e-sess-002",
             "version": 1,
@@ -334,14 +388,12 @@ class TestReviewRejectFlow:
             "reject_reason": "分类不准确需重新判定",
         })
 
-        # Assert – HTTP response shape
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["status"] == "rejected"
         assert data["bad_case_count"] == 0
         assert data["next_status"] == "pending_review"
 
-        # Assert – reject_count and last_reject_reason persisted
         row = await _fetch_one(
             engine,
             "SELECT reject_count, last_reject_reason "
@@ -352,7 +404,6 @@ class TestReviewRejectFlow:
         assert row[0] == 1                           # reject_count
         assert row[1] == "分类不准确需重新判定"          # last_reject_reason
 
-        # Assert – zero bad_case_sample records
         n_bad = await _count(
             engine, "bad_case_sample",
             workorder_id="WO-E2E-002",
@@ -366,7 +417,6 @@ class TestReviewIdempotency:
     async def test_idempotency(self, client, engine):
         """Submitting the same session_id twice returns a 'dup' response
         and does NOT create duplicate audit-log or bad-case records."""
-        # Arrange – create a workorder and confirm it once
         await _create_workorder(engine, id="WO-E2E-001")
         resp1 = await client.post("/api/workorders/WO-E2E-001/review", json={
             "session_id": "e2e-sess-003",
@@ -383,35 +433,31 @@ class TestReviewIdempotency:
             "reject_reason": None,
         })
         assert resp1.status_code == 200, resp1.text
-        # Grab the current version after the first confirm
         row = await _fetch_one(
             engine,
             "SELECT version FROM workorder WHERE id = :id",
             id="WO-E2E-001",
         )
         current_version = row[0]
-        assert current_version == 2  # was 1, now 2
+        assert current_version == 2
 
         # Act – same session_id again
         resp2 = await client.post("/api/workorders/WO-E2E-001/review", json={
-            "session_id": "e2e-sess-003",   # same session
-            "version": current_version,      # pass current version
+            "session_id": "e2e-sess-003",
+            "version": current_version,
             "changes": [],
             "reject_reason": None,
         })
 
-        # Assert – idempotent response
         assert resp2.status_code == 200, resp2.text
         assert resp2.json()["review_id"] == "dup"
 
-        # Assert – only one audit log entry (no duplicate)
         n_audit = await _count(
             engine, "workorder_audit_log",
             workorder_id="WO-E2E-001",
         )
         assert n_audit == 1
 
-        # Assert – only one bad_case record
         n_bad = await _count(
             engine, "bad_case_sample",
             workorder_id="WO-E2E-001",
