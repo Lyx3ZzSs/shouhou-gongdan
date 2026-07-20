@@ -1,12 +1,10 @@
 import {
-  Bell,
   ChevronDown,
   Search,
   ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   DropdownMenu,
@@ -17,23 +15,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AutoSaveIndicator } from './primitives/AutoSaveIndicator';
-import { useReviewStore, useQueueStats } from '../store/useReviewStore';
-import { cn } from '@/lib/utils';
-
-const NOTIFICATIONS = [
-  { id: 'n1', text: 'WO-20260717-0379 即将超时（剩余 12 分钟）', tone: 'warning' as const },
-  { id: 'n2', text: '李四转交 1 条工单给您', tone: 'info' as const },
-  { id: 'n3', text: 'WO-20260717-0381 存在 1 个阻断错误', tone: 'danger' as const },
-];
+import { useReviewStore } from '../store/useReviewStore';
 
 export function WorkbenchHeader() {
   const autoSaveStatus = useReviewStore((s) => s.autoSaveStatus);
   const setFilters = useReviewStore((s) => s.setFilters);
   const keyword = useReviewStore((s) => s.filters.keyword);
-  const stats = useQueueStats();
-
-  const processed = stats.processed;
-  const total = processed + stats.pending;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4">
@@ -63,46 +50,6 @@ export function WorkbenchHeader() {
 
       {/* 自动暂存 */}
       <AutoSaveIndicator status={autoSaveStatus} />
-
-      <Separator orientation="vertical" className="h-6" />
-
-      {/* 今日审核进度 */}
-      <div className="flex items-center gap-1.5 text-xs">
-        <span className="text-muted-foreground">今日审核</span>
-        <span className="font-semibold tabular-nums text-foreground">
-          {processed}
-          <span className="text-muted-foreground"> / {total}</span>
-        </span>
-      </div>
-
-      <Separator orientation="vertical" className="h-6" />
-
-      {/* 通知 */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="通知">
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-80">
-          <DropdownMenuLabel>通知（{NOTIFICATIONS.length}）</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {NOTIFICATIONS.map((n) => (
-            <DropdownMenuItem key={n.id} className="items-start gap-2 py-2">
-              <span
-                className={cn(
-                  'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
-                  n.tone === 'danger' && 'bg-destructive',
-                  n.tone === 'warning' && 'bg-warning',
-                  n.tone === 'info' && 'bg-primary',
-                )}
-              />
-              <span className="text-sm">{n.text}</span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
 
       {/* 当前用户 */}
       <DropdownMenu>

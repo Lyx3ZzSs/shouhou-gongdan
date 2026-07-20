@@ -52,6 +52,7 @@ class WorkOrderQueryService:
             last_reject_reason=wo.last_reject_reason,
             last_rejected_by=wo.last_rejected_by,
             last_rejected_at=wo.last_rejected_at.isoformat() if wo.last_rejected_at else None,
+            review_notes=wo.review_notes,
             serial_number=wo.serial_number,
             created_at=wo.created_at.isoformat() if wo.created_at else None,
             initiator=wo.initiator,

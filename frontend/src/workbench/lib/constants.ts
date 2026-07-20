@@ -74,9 +74,7 @@ export const DECISION_META: Record<
 > = {
   approved: { label: '确认通过', variant: 'success' },
   approved_with_changes: { label: '修改后确认', variant: 'default' },
-  returned: { label: '退回补充', variant: 'warning' },
   rejected: { label: '驳回', variant: 'destructive' },
-  transferred: { label: '转交复核', variant: 'secondary' },
   draft: { label: '暂存', variant: 'muted' },
 };
 

@@ -31,6 +31,7 @@ export interface WorkOrderData {
   last_reject_reason: string | null;
   last_rejected_by: string | null;
   last_rejected_at: string | null;
+  review_notes: string | null;
   ai_confidence?: number | null;
   // 核心字段
   station_name: string;

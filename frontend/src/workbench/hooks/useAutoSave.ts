@@ -31,7 +31,7 @@ export function useAutoSave() {
             { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
           ]),
         );
-        await stashWorkOrder(ticketId, fieldStates, store.notes);
+        await stashWorkOrder(ticketId, fieldStates, store.notes, 'auto_save');
         setAutoSaveStatus('saved');
       } catch {
         setAutoSaveStatus('failed');

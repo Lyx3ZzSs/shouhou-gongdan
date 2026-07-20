@@ -78,13 +78,38 @@ export async function releaseLock(id: string): Promise<void> {
 }
 
 export async function stashWorkOrder(
-  id: string, fieldStates: Record<string, unknown>, notes: string
+  id: string,
+  fieldStates: Record<string, unknown>,
+  notes: string,
+  mode: 'manual' | 'auto_save' = 'manual',
 ): Promise<void> {
-  await fetch(`${BASE}/${id}/stash`, {
+  const res = await fetch(`${BASE}/${id}/stash`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ field_states: fieldStates, notes }),
+    body: JSON.stringify({ field_states: fieldStates, notes, mode }),
   });
+  if (!res.ok) throw new Error(`暂存失败: ${res.status}`);
+}
+
+export interface StashData {
+  field_states: Record<string, { currentValue: unknown; status: string; changeReason?: string }>;
+  notes: string;
+  updated_at: string | null;
+}
+
+export async function fetchStashData(id: string): Promise<StashData | null> {
+  const res = await fetch(`${BASE}/${id}/stash`, { headers: authHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`获取暂存数据失败: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteStashData(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/${id}/stash`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`删除暂存数据失败: ${res.status}`);
 }
 
 export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
@@ -102,6 +127,7 @@ export interface ConfirmRequest {
   version: number;
   changes: { op: string; path: string; field_label: string; old_value?: unknown; new_value?: unknown }[];
   reject_reason: string | null;
+  review_notes: string | null;
   idempotency_key: string;
 }
 

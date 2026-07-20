@@ -1,22 +1,13 @@
 import {
   ArrowRight,
   Ban,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Save,
-  Share2,
   ShieldAlert,
   StepForward,
-  Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -122,37 +113,12 @@ export function StickyDecisionBar() {
           <Button
             variant="outline"
             size="default"
-            className="gap-1.5 text-warning"
-            onClick={() => openSubmitDialog('returned')}
-          >
-            <Undo2 className="h-4 w-4" />
-            退回补充
-          </Button>
-          <Button
-            variant="outline"
-            size="default"
             className="gap-1.5 text-destructive"
             onClick={() => openSubmitDialog('rejected')}
           >
             <Ban className="h-4 w-4" />
             驳回
           </Button>
-
-          {/* 更多操作下拉 */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="default" className="gap-1">
-                更多
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
-              <DropdownMenuItem onClick={() => openSubmitDialog('transferred')}>
-                <Share2 className="h-4 w-4" />
-                转交复核
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
           <div className="mx-1 h-6 w-px bg-border" />
 

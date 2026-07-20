@@ -11,7 +11,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.models.base import Base  # noqa: E402
-from app.models import audit_log, bad_case, workorder  # noqa: E402, F401
+from app.models import audit_log, bad_case, workorder, workorder_stash  # noqa: E402, F401
 
 target_metadata = Base.metadata
 

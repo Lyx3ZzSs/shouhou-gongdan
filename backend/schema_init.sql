@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS workorder (
     last_reject_reason  TEXT        NULL,
     last_rejected_by    VARCHAR(64) NULL,
     last_rejected_at    TIMESTAMP   NULL,
+    review_notes    TEXT            NULL,
     sync_status     VARCHAR(16)     NOT NULL DEFAULT 'pending',  -- pending | synced | failed
 
     -- 只读元数据
@@ -95,5 +96,18 @@ CREATE TABLE IF NOT EXISTS bad_case_sample (
 
 CREATE INDEX IF NOT EXISTS idx_status    ON bad_case_sample (sample_status);
 CREATE INDEX IF NOT EXISTS idx_workorder ON bad_case_sample (workorder_id);
+
+-- 4. workorder_stash 暂存表（审核进度草稿保存）
+CREATE TABLE IF NOT EXISTS workorder_stash (
+    id              BIGSERIAL       PRIMARY KEY,
+    workorder_id    VARCHAR(64)     NOT NULL,
+    field_states    JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    notes           TEXT            NULL DEFAULT '',
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_workorder_stash_workorder_id UNIQUE (workorder_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workorder_stash_workorder_id ON workorder_stash (workorder_id);
 
 COMMIT;

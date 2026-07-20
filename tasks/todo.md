@@ -109,7 +109,7 @@ ReviewWorkbench（根布局：顶56固定 + 底操作栏固定 + 三栏 + 主体
 │  ├ CurrentChanges（实时：时间/字段/前/后/原因/定位/撤销；改回原值移除）
 │  ├ AuditTimeline（系统/字段修改/流程/评论/外部 五类区分）
 │  └ ReviewNotes（文本框 + 常用短语）
-├ StickyDecisionBar（底固定：左 上一条/下一条/暂存；右 退回补充/驳回/转交复核/直接通过/修改后通过/提交并下一条；阻断时禁用通过并提示定位）
+├ StickyDecisionBar（底固定：左 上一条/下一条/暂存；右 驳回/直接通过/修改后通过/提交并下一条；阻断时禁用通过并提示定位）
 ├ ReviewSubmitDialog（完整摘要：结论/修改数/每字段前后/已处理异常/未处理问题/备注/原因汇总/提交并下一条）
 ├ VersionConflictDialog（他人更新/对方修改/使用最新合并/放弃我的/查看双方差异）
 └ primitives: StatusBadge / ConfidenceBar / SLACountdown / RiskTag / AutoSaveIndicator

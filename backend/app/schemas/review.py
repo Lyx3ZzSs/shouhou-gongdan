@@ -12,6 +12,26 @@ ALLOWED_FIELDS = {
     "order_level", "fault_level", "onsite_level", "required_solve_time",
 }
 
+MAX_TEXT_FIELD_LENGTH = 5000
+
+
+# ---- Shared validators ----
+
+def _validate_reject_reason_not_empty(v: str | None) -> str | None:
+    """驳回时 reject_reason 不为 None，且必须非空（含纯空格）。"""
+    if v is not None and not v.strip():
+        raise ValueError("驳回时必须填写审核备注")
+    if v is not None and len(v) > MAX_TEXT_FIELD_LENGTH:
+        raise ValueError(f"驳回原因不能超过 {MAX_TEXT_FIELD_LENGTH} 字符")
+    return v
+
+
+def _validate_review_notes_length(v: str | None) -> str | None:
+    """审核备注长度限制。"""
+    if v is not None and len(v) > MAX_TEXT_FIELD_LENGTH:
+        raise ValueError(f"审核备注不能超过 {MAX_TEXT_FIELD_LENGTH} 字符")
+    return v
+
 
 class FieldChange(BaseModel):
     op: Literal["replace", "add", "remove"]
@@ -50,6 +70,7 @@ class WorkOrderResponse(BaseModel):
     last_reject_reason: str | None = None
     last_rejected_by: str | None = None
     last_rejected_at: str | None = None
+    review_notes: str | None = None
     serial_number: str | None = None
     created_at: str | None = None
     initiator: str | None = None
@@ -93,6 +114,10 @@ class ReviewRequest(BaseModel):
     version: int
     changes: list[FieldChange] = []
     reject_reason: str | None = None
+    review_notes: str | None = None
+
+    _validate_reject_reason = field_validator("reject_reason")(_validate_reject_reason_not_empty)
+    _validate_review_notes = field_validator("review_notes")(_validate_review_notes_length)
 
 
 class ConfirmRequest(BaseModel):
@@ -101,7 +126,11 @@ class ConfirmRequest(BaseModel):
     version: int
     changes: list[FieldChange] = []
     reject_reason: str | None = None
+    review_notes: str | None = None
     idempotency_key: str
+
+    _validate_reject_reason = field_validator("reject_reason")(_validate_reject_reason_not_empty)
+    _validate_review_notes = field_validator("review_notes")(_validate_review_notes_length)
 
 
 class AuditLogEntry(BaseModel):
@@ -132,9 +161,22 @@ class ConfirmResponse(BaseModel):
 
 
 class StashRequest(BaseModel):
-    """暂存请求 — 保存当前审核进度到服务端。"""
+    """暂存请求 — 保存当前审核进度到服务端。
+
+    mode='manual': 标记工单为 stashed，释放编辑锁。
+    mode='auto_save': 仅保存进度，不改变工单状态，不释放锁。
+    """
     field_states: dict[str, Any] = {}  # fieldId → {currentValue, status, changeReason, ...}
     notes: str = ""
+    mode: Literal["manual", "auto_save"] = "manual"
+    _validate_notes = field_validator("notes")(_validate_review_notes_length)
+
+
+class StashData(BaseModel):
+    """Response for GET /api/workorders/{id}/stash"""
+    field_states: dict[str, Any] = {}
+    notes: str = ""
+    updated_at: str | None = None
 
 
 class StashResponse(BaseModel):

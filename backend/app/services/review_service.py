@@ -3,10 +3,11 @@ import logging
 import uuid
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, update
+from sqlalchemy import text, update, delete as sa_delete
 from fastapi import HTTPException
 from app.schemas.review import ReviewRequest, ConfirmRequest, ALLOWED_FIELDS
 from app.models.workorder import WorkOrder
+from app.models.workorder_stash import WorkOrderStash
 from app.services.audit_service import AuditService
 from app.services.bad_case_service import BadCaseService
 from app.services.lock_service import get_lock_service
@@ -25,6 +26,19 @@ class ReviewService:
         self.bad_case_service = BadCaseService(db)
         self.lock_service = get_lock_service()
 
+    async def release_lock_safely(self, workorder_id: str, operator_id: str) -> None:
+        """释放编辑锁，忽略 PermissionError（锁可能已过期）。"""
+        try:
+            await self.lock_service.release(workorder_id, operator_id)
+        except PermissionError:
+            pass
+
+    async def delete_stash(self, workorder_id: str) -> None:
+        """清除暂存数据（工单已确认/驳回，不再需要草稿）。"""
+        await self.db.execute(
+            sa_delete(WorkOrderStash).where(WorkOrderStash.workorder_id == workorder_id)
+        )
+
     async def review(
         self,
         *,
@@ -34,28 +48,33 @@ class ReviewService:
         operator_name: str,
         operator_department: str,
     ) -> dict:
-        # 事务块，包裹幂等检查 + 全部写入操作，保证原子性
-        async with self.db.begin():
-            # 1. 幂等性检查
-            result = await self.db.execute(
-                text("SELECT id FROM workorder_audit_log WHERE session_id = :sid LIMIT 1"),
-                {"sid": request.session_id},
-            )
-            if result.scalar():
-                return self._build_existing_response(workorder_id, request)
+        """提交审核（保留兼容旧 /review 端点）。"""
+        try:
+            async with self.db.begin():
+                # 1. 幂等性检查
+                result = await self.db.execute(
+                    text("SELECT id FROM workorder_audit_log WHERE session_id = :sid LIMIT 1"),
+                    {"sid": request.session_id},
+                )
+                if result.scalar():
+                    return self._build_existing_response(workorder_id, request)
 
-            if request.reject_reason is not None:
-                return await self._execute_reject(
-                    workorder_id, request, operator_id, operator_name
-                )
-            else:
-                return await self._execute_confirm(
-                    workorder_id, request, operator_id, operator_name, operator_department
-                )
+                if request.reject_reason is not None:
+                    result_dict = await self._execute_reject(
+                        workorder_id, request, operator_id, operator_name
+                    )
+                else:
+                    result_dict = await self._execute_confirm(
+                        workorder_id, request, operator_id, operator_name, operator_department
+                    )
+                # 事务在此处提交（async with 退出时）
+        finally:
+            await self.release_lock_safely(workorder_id, operator_id)
+
+        return result_dict
 
     async def _execute_confirm(
         self, workorder_id, request, operator_id, operator_name, operator_department,
-        idempotency_key: str = "",
     ):
         # 2. 乐观锁 UPDATE — confirmed 分支，sync_status = 'pending'
         result = await self.db.execute(
@@ -63,7 +82,7 @@ class ReviewService:
                 UPDATE workorder
                 SET status = 'confirmed', version = version + 1,
                     reviewed_at = :now, reviewed_by = :operator_name,
-                    sync_status = 'pending'
+                    sync_status = 'pending', review_notes = :review_notes
                 WHERE id = :id AND version = :version AND status != 'confirmed'
             """),
             {
@@ -71,62 +90,58 @@ class ReviewService:
                 "version": request.version,
                 "now": datetime.utcnow(),
                 "operator_name": operator_name,
+                "review_notes": request.review_notes,
             },
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
 
-        try:
-            # 3. 白名单过滤 + 批量更新变更字段（合并为一次 UPDATE）
-            filtered_changes = [
-                c for c in request.changes
-                if c.path.lstrip("/") in ALLOWED_FIELDS
-            ]
-            if filtered_changes:
-                values = {c.path.lstrip("/"): c.new_value for c in filtered_changes}
-                await self.db.execute(
-                    update(WorkOrder)
-                    .where(WorkOrder.id == workorder_id)
-                    .values(**values),
-                )
-
-            # 4. 写入审计日志
-            audit_logs = await self.audit_service.batch_create(
-                workorder_id=workorder_id,
-                session_id=request.session_id,
-                changes=filtered_changes,
-                operator_id=operator_id,
-                operator_name=operator_name,
+        # 3. 白名单过滤 + 批量更新变更字段（合并为一次 UPDATE）
+        filtered_changes = [
+            c for c in request.changes
+            if c.path.lstrip("/") in ALLOWED_FIELDS
+        ]
+        if filtered_changes:
+            values = {c.path.lstrip("/"): c.new_value for c in filtered_changes}
+            await self.db.execute(
+                update(WorkOrder)
+                .where(WorkOrder.id == workorder_id)
+                .values(**values),
             )
 
-            # 5. bad_case 回流（仅 confirmed + 有变更时）
-            bad_case_count = 0
-            if filtered_changes:
-                audit_log_ids = [log.id for log in audit_logs]
-                await self.bad_case_service.batch_create(
-                    workorder_id=workorder_id,
-                    audit_log_ids=audit_log_ids,
-                    changes=filtered_changes,
-                )
-                bad_case_count = len(filtered_changes)
+        # 4. 写入审计日志
+        audit_logs = await self.audit_service.batch_create(
+            workorder_id=workorder_id,
+            session_id=request.session_id,
+            changes=filtered_changes,
+            operator_id=operator_id,
+            operator_name=operator_name,
+        )
 
-            review_id = f"rev-{uuid.uuid4().hex[:12]}"
+        # 5. bad_case 回流（仅 confirmed + 有变更时）
+        bad_case_count = 0
+        if filtered_changes:
+            audit_log_ids = [log.id for log in audit_logs]
+            await self.bad_case_service.batch_create(
+                workorder_id=workorder_id,
+                audit_log_ids=audit_log_ids,
+                changes=filtered_changes,
+            )
+            bad_case_count = len(filtered_changes)
 
-            # 6. 同步至销售易（inline，5s 超时，失败不阻塞确认返回）
-            sync_status = await self._sync_to_xiaoshouyi(workorder_id, idempotency_key)
+        review_id = f"rev-{uuid.uuid4().hex[:12]}"
 
-            return {
-                "review_id": review_id,
-                "workorder_id": workorder_id,
-                "status": "confirmed",
-                "change_count": len(filtered_changes),
-                "bad_case_count": bad_case_count,
-                "next_status": "dispatching",
-                "sync_status": sync_status,
-            }
-        finally:
-            # 7. 释放编辑锁（无论成功或异常都要释放，避免孤儿锁）
-            await self.lock_service.release(workorder_id, operator_id)
+        # 6. 清除暂存数据
+        await self.delete_stash(workorder_id)
+
+        return {
+            "review_id": review_id,
+            "workorder_id": workorder_id,
+            "status": "confirmed",
+            "change_count": len(filtered_changes),
+            "bad_case_count": bad_case_count,
+            "next_status": "dispatching",
+        }
 
     async def _execute_reject(self, workorder_id, request, operator_id, operator_name):
         result = await self.db.execute(
@@ -136,7 +151,8 @@ class ReviewService:
                     reject_count = reject_count + 1,
                     last_reject_reason = :reason,
                     last_rejected_by = :operator_name,
-                    last_rejected_at = :now
+                    last_rejected_at = :now,
+                    review_notes = :review_notes
                 WHERE id = :id AND version = :version AND status != 'confirmed'
             """),
             {
@@ -145,32 +161,32 @@ class ReviewService:
                 "reason": request.reject_reason,
                 "operator_name": operator_name,
                 "now": datetime.utcnow(),
+                "review_notes": request.review_notes or request.reject_reason,
             },
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
 
-        try:
-            await self.audit_service.create_reject_log(
-                workorder_id=workorder_id,
-                session_id=request.session_id,
-                reject_reason=request.reject_reason,
-                operator_id=operator_id,
-                operator_name=operator_name,
-            )
+        await self.audit_service.create_reject_log(
+            workorder_id=workorder_id,
+            session_id=request.session_id,
+            reject_reason=request.reject_reason,
+            operator_id=operator_id,
+            operator_name=operator_name,
+        )
 
-            review_id = f"rev-{uuid.uuid4().hex[:12]}"
-            return {
-                "review_id": review_id,
-                "workorder_id": workorder_id,
-                "status": "rejected",
-                "change_count": 0,
-                "bad_case_count": 0,
-                "next_status": "pending_review",
-            }
-        finally:
-            # 释放锁（无论成功或异常都要释放，避免孤儿锁）
-            await self.lock_service.release(workorder_id, operator_id)
+        # 清除暂存数据
+        await self.delete_stash(workorder_id)
+
+        review_id = f"rev-{uuid.uuid4().hex[:12]}"
+        return {
+            "review_id": review_id,
+            "workorder_id": workorder_id,
+            "status": "rejected",
+            "change_count": 0,
+            "bad_case_count": 0,
+            "next_status": "pending_review",
+        }
 
     async def confirm(
         self,
@@ -182,28 +198,41 @@ class ReviewService:
         operator_department: str,
     ) -> dict:
         """确认提交流程：本地落库 + 后台异步同步销售易。"""
-        async with self.db.begin():
-            # 1. 幂等性检查
-            result = await self.db.execute(
-                text("SELECT id FROM workorder_audit_log WHERE session_id = :sid LIMIT 1"),
-                {"sid": request.session_id},
-            )
-            if result.scalar():
-                return {
-                    **self._build_existing_response(workorder_id, request),
-                    "sync_status": "pending",
-                }
+        idempotent = False
+        try:
+            async with self.db.begin():
+                # 1. 幂等性检查
+                result = await self.db.execute(
+                    text("SELECT id FROM workorder_audit_log WHERE session_id = :sid LIMIT 1"),
+                    {"sid": request.session_id},
+                )
+                if result.scalar():
+                    # 幂等重试 — 仍清除暂存数据
+                    await self.delete_stash(workorder_id)
+                    idempotent = True
+                    result_dict = {
+                        **self._build_existing_response(workorder_id, request),
+                        "sync_status": "pending",
+                    }
+                elif request.reject_reason is not None:
+                    result_dict = await self._execute_reject(
+                        workorder_id, request, operator_id, operator_name
+                    )
+                    result_dict["sync_status"] = "pending"
+                else:
+                    result_dict = await self._execute_confirm(
+                        workorder_id, request, operator_id, operator_name, operator_department,
+                    )
+                # 事务在此处提交（async with 退出时）
+        finally:
+            await self.release_lock_safely(workorder_id, operator_id)
 
-            if request.reject_reason is not None:
-                reject_result = await self._execute_reject(
-                    workorder_id, request, operator_id, operator_name
-                )
-                return {**reject_result, "sync_status": "pending"}
-            else:
-                return await self._execute_confirm(
-                    workorder_id, request, operator_id, operator_name, operator_department,
-                    idempotency_key=request.idempotency_key,
-                )
+        # 同步至销售易（事务外 + 锁释放后，5s 超时，失败不阻塞确认返回）
+        if not idempotent and result_dict.get("status") == "confirmed":
+            sync_status = await self._sync_to_xiaoshouyi(workorder_id, request.idempotency_key)
+            result_dict["sync_status"] = sync_status
+
+        return result_dict
 
     async def _sync_to_xiaoshouyi(self, workorder_id: str, idempotency_key: str) -> str:
         """调用销售易创建工单，返回 sync_status。
