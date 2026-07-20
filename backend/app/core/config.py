@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     JWT_SECRET: str = "dev-secret-change-in-production"
     REDIS_URL: str = "redis://localhost:6379/0"
-    DATABASE_URL: str = "sqlite+aiosqlite:///./backend.db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:JvUcMbDxjYY4M8sj@localhost:5432/shouhou_gongdan"
 
     # 销售易（XiaoShouYi）服务工单接口
     XIAOSHOUYI_BASE_URL: str = ""

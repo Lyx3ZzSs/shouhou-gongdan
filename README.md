@@ -42,8 +42,8 @@
 |----|------|
 | **后端框架** | Python 3 + FastAPI |
 | **ORM** | SQLAlchemy 2.0 (async) |
-| **数据库** | SQLite (开发) / MySQL 8.0+ (生产) |
-| **缓存** | Redis (分布式锁) |
+| **数据库** | PostgreSQL 16 (开发/生产统一) |
+| **缓存** | Redis 7+ (分布式锁) |
 | **前端框架** | React 18 + TypeScript 5 |
 | **构建工具** | Vite 5 |
 | **样式方案** | Tailwind CSS 3.4 + shadcn/ui 组件 |
@@ -57,20 +57,26 @@
 
 - Python 3.10+
 - Node.js 18+
-- Redis 7+（可选，开发环境可使用 mock）
+- Docker Compose（用于启动 PostgreSQL + Redis）
 
 ### 后端
 
 ```bash
+# 1. 启动基础设施（PostgreSQL + Redis）
+docker compose up -d
+
+# 2. 初始化 Python 环境
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 初始化数据库
-alembic upgrade head
+# 3. 初始化数据库表结构
+#    首次运行：alembic stamp head（docker compose 已通过 schema_init.sql 创建表）
+#    后续增量迁移：alembic upgrade head
+alembic stamp head
 
-# 启动服务 (端口 8001)
+# 4. 启动服务 (端口 8001)
 python -m app.main
 # 或: uvicorn app.main:app --reload --port 8001
 ```
