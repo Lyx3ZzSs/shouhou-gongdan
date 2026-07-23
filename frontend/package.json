@@ -17,6 +17,7 @@
     "autoprefixer": "^10.5.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "keycloak-js": "^26.2.4",
     "lodash.isequal": "^4.5.0",
     "lucide-react": "^1.24.0",
     "postcss": "^8.5.19",

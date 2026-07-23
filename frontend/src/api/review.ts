@@ -1,13 +1,11 @@
 import type {
   WorkOrderData, ReviewRequest, ReviewResponse,
   LockStatus,
-} from '../pages/WorkOrderReview/types';
-// Generated types from backend OpenAPI spec (openapi-typescript).
-// Re-run `npm run generate-types` after backend schema changes to keep these in sync.
+} from '../types/review';
 import type { components } from '../types/api';
+import keycloak from '../auth/keycloak';
 
 // ---- Type aliases derived from the generated OpenAPI spec ----
-// Prefer these over the manually-mirrored types in new code.
 export type GeneratedWorkOrderSummary = components['schemas']['WorkOrderSummary'];
 export type GeneratedWorkOrderResponse = components['schemas']['WorkOrderResponse'];
 export type GeneratedReviewRequest = components['schemas']['ReviewRequest'];
@@ -17,29 +15,48 @@ export type GeneratedAuditLogEntry = components['schemas']['AuditLogEntry'];
 
 const BASE = '/api/workorders';
 
-// WARNING: 硬编码 DEV_TOKEN 仅用于本地开发。
-// 生产环境上线前必须替换为正式的 token 注入机制（如 OAuth2 登录流程、
-// 环境变量 import.meta.env.VITE_API_TOKEN 或 AuthContext）。
-// 此 token 会打包进浏览器 bundle，任何人可通过 DevTools 提取。
-// Dev JWT token — generated against backend's dev JWT_SECRET.
-const DEV_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlciIsIm5hbWUiOiJEZXYgVXNlciIsInJvbGUiOiJjdXN0b21lcl9zZXJ2aWNlX2FnZW50IiwiZGVwYXJ0bWVudCI6IkRldiBEZXB0In0.XvTquXFV8KXXqBA5_AhnuiYvo8YeWGD_E3qglDnQsMA';
+function getToken(): string {
+  return keycloak.token ?? '';
+}
 
 function authHeaders(): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${DEV_TOKEN}`,
-  };
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const doFetch = () => fetch(url, {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers as Record<string, string> || {}) },
+  });
+
+  let res = await doFetch();
+
+  if (res.status === 401) {
+    try {
+      await keycloak.updateToken(30);
+      res = await doFetch();
+    } catch {
+      keycloak.login({ redirectUri: window.location.origin + '/callback' });
+      throw new Error('认证已过期，正在跳转登录...');
+    }
+  }
+
+  return res;
 }
 
 export async function fetchWorkOrderList(): Promise<GeneratedWorkOrderSummary[]> {
-  const res = await fetch(BASE, { headers: authHeaders() });
+  const res = await authFetch(BASE);
   if (!res.ok) throw new Error(`获取工单列表失败: ${res.status}`);
   return res.json();
 }
 
 export async function fetchWorkOrder(id: string): Promise<WorkOrderData> {
-  const res = await fetch(`${BASE}/${id}`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/${id}`);
   if (!res.ok) throw new Error(`获取工单失败: ${res.status}`);
   return res.json();
 }
@@ -47,9 +64,8 @@ export async function fetchWorkOrder(id: string): Promise<WorkOrderData> {
 export async function submitReview(
   id: string, body: ReviewRequest
 ): Promise<ReviewResponse> {
-  const res = await fetch(`${BASE}/${id}/review`, {
+  const res = await authFetch(`${BASE}/${id}/review`, {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (res.status === 409) {
@@ -62,18 +78,16 @@ export async function submitReview(
 export class ConflictError extends Error {}
 
 export async function acquireLock(id: string): Promise<LockStatus> {
-  const res = await fetch(`${BASE}/${id}/lock`, {
+  const res = await authFetch(`${BASE}/${id}/lock`, {
     method: 'POST',
-    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`获取锁失败: ${res.status}`);
   return res.json();
 }
 
 export async function releaseLock(id: string): Promise<void> {
-  await fetch(`${BASE}/${id}/lock`, {
+  await authFetch(`${BASE}/${id}/lock`, {
     method: 'DELETE',
-    headers: authHeaders(),
   });
 }
 
@@ -83,9 +97,8 @@ export async function stashWorkOrder(
   notes: string,
   mode: 'manual' | 'auto_save' = 'manual',
 ): Promise<void> {
-  const res = await fetch(`${BASE}/${id}/stash`, {
+  const res = await authFetch(`${BASE}/${id}/stash`, {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify({ field_states: fieldStates, notes, mode }),
   });
   if (!res.ok) throw new Error(`暂存失败: ${res.status}`);
@@ -98,24 +111,22 @@ export interface StashData {
 }
 
 export async function fetchStashData(id: string): Promise<StashData | null> {
-  const res = await fetch(`${BASE}/${id}/stash`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/${id}/stash`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`获取暂存数据失败: ${res.status}`);
   return res.json();
 }
 
 export async function deleteStashData(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/${id}/stash`, {
+  const res = await authFetch(`${BASE}/${id}/stash`, {
     method: 'DELETE',
-    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`删除暂存数据失败: ${res.status}`);
 }
 
 export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
-  const res = await fetch(`${BASE}/${id}/lock`, {
+  const res = await authFetch(`${BASE}/${id}/lock`, {
     method: 'PUT',
-    headers: authHeaders(),
   });
   if (res.status === 423) return 'lost';
   if (!res.ok) throw new Error(`心跳失败: ${res.status}`);
@@ -144,9 +155,8 @@ export interface ConfirmResponse {
 export async function fetchConfirm(
   id: string, body: ConfirmRequest
 ): Promise<ConfirmResponse> {
-  const res = await fetch(`${BASE}/${id}/confirm`, {
+  const res = await authFetch(`${BASE}/${id}/confirm`, {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (res.status === 409) {
@@ -157,9 +167,7 @@ export async function fetchConfirm(
 }
 
 export async function fetchAuditLogs(id: string): Promise<GeneratedAuditLogEntry[]> {
-  const res = await fetch(`${BASE}/${id}/audit-logs`, {
-    headers: authHeaders(),
-  });
+  const res = await authFetch(`${BASE}/${id}/audit-logs`);
   if (!res.ok) throw new Error(`获取审计日志失败: ${res.status}`);
   return res.json();
 }
