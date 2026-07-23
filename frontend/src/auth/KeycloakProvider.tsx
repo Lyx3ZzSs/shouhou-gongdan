@@ -84,6 +84,7 @@ export function KeycloakProvider({ children }: Props) {
       .init({
         onLoad: 'login-required',
         pkceMethod: 'S256',
+        redirectUri: window.location.origin + '/callback',
       })
       .then((auth) => {
         if (auth && keycloak.token) {
