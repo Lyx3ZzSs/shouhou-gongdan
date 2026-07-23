@@ -1,9 +1,18 @@
 import pytest
-from unittest.mock import patch, MagicMock
-import jwt as pyjwt
+from unittest.mock import patch, MagicMock, PropertyMock
 from fastapi import HTTPException
 
 from app.auth.jwt import decode_jwt
+
+
+@pytest.fixture(autouse=True)
+def patch_settings():
+    """自动为所有测试注入 Keycloak 配置 mock。"""
+    with patch("app.auth.jwt.settings") as mock_settings:
+        mock_settings.KEYCLOAK_JWKS_URL = "http://10.8.6.32:18080/realms/company-dev/protocol/openid-connect/certs"
+        mock_settings.KEYCLOAK_ISSUER = "http://10.8.6.32:18080/realms/company-dev"
+        mock_settings.KEYCLOAK_AUDIENCE = "shouhou-gongdan-api"
+        yield mock_settings
 
 
 class TestDecodeJwt:
