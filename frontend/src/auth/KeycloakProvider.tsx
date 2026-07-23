@@ -82,10 +82,8 @@ export function KeycloakProvider({ children }: Props) {
 
     keycloak
       .init({
-        onLoad: 'check-sso',
+        onLoad: 'login-required',
         pkceMethod: 'S256',
-        silentCheckSsoRedirectUri:
-          window.location.origin + '/silent-check-sso.html',
       })
       .then((auth) => {
         if (auth && keycloak.token) {
