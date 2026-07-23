@@ -1,44 +1,55 @@
-from dataclasses import dataclass
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from app.auth.jwt import decode_jwt
+from app.auth.schemas import CurrentUser
+
 security = HTTPBearer()
 
-
-@dataclass
-class CurrentUser:
-    user_id: str
-    name: str
-    role: str
-    department: str
+VALID_ROLES = {"agent_admin", "agent_manager", "agent_user"}
 
 
-def validate_token(token: str) -> CurrentUser:
-    """Validate a raw JWT token string and return a CurrentUser."""
-    payload = decode_jwt(token)
-    user = CurrentUser(
-        user_id=payload["sub"],
-        name=payload.get("name", ""),
-        role=payload.get("role", ""),
-        department=payload.get("department", ""),
-    )
-    if user.role != "customer_service_agent":
-        raise HTTPException(status_code=403, detail="仅客服坐席可执行此操作")
-    return user
+def _extract_roles(payload: dict) -> list[str]:
+    """从 resource_access.shouhou-gongdan-api.roles 提取角色列表。"""
+    try:
+        return payload.get("resource_access", {}).get("shouhou-gongdan-api", {}).get("roles", [])
+    except (AttributeError, KeyError):
+        return []
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> CurrentUser:
+    """从 Bearer token 解析当前用户。"""
     token = credentials.credentials
-    return validate_token(token)
+    payload = await decode_jwt(token)
+
+    roles = _extract_roles(payload)
+
+    return CurrentUser(
+        user_id=payload.get("sub", ""),
+        username=payload.get("preferred_username", ""),
+        display_name=payload.get("name", ""),
+        email=payload.get("email", ""),
+        department_code=payload.get("department_code", ""),
+        department_name=payload.get("department_name", ""),
+        roles=roles,
+    )
 
 
-def decode_jwt(token: str) -> dict:
-    # TODO: 替换为实际的 JWT 解码逻辑（项目级配置）
-    import jwt
-    from app.core.config import settings
-    try:
-        return jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
-    except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"无效的认证令牌: {e}")
+async def require_admin(
+    user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """要求 agent_admin 角色。"""
+    if "agent_admin" not in user.roles:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
+async def require_any_role(
+    user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """要求至少拥有三个有效角色之一。"""
+    if not (VALID_ROLES & set(user.roles)):
+        raise HTTPException(status_code=403, detail="无有效角色")
+    return user
