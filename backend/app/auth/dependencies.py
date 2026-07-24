@@ -1,12 +1,28 @@
+import logging
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.auth.jwt import decode_jwt
 from app.auth.schemas import CurrentUser
+from app.core.config import settings
 
-security = HTTPBearer()
+logger = logging.getLogger(__name__)
+
+security = HTTPBearer(auto_error=False)
 
 VALID_ROLES = {"agent_admin", "agent_manager", "agent_user"}
+
+# AUTH_ENABLED=false 时使用的默认开发用户（拥有全部角色）
+_DEV_USER = CurrentUser(
+    user_id="dev-user",
+    username="dev",
+    display_name="开发用户",
+    email="dev@localhost",
+    department_code="DEV",
+    department_name="开发部",
+    roles=["agent_admin", "agent_manager", "agent_user"],
+)
 
 
 def _extract_roles(payload: dict) -> list[str]:
@@ -18,9 +34,15 @@ def _extract_roles(payload: dict) -> list[str]:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> CurrentUser:
-    """从 Bearer token 解析当前用户。"""
+    """从 Bearer token 解析当前用户。AUTH_ENABLED=false 时返回开发用户。"""
+    if not settings.AUTH_ENABLED:
+        return _DEV_USER
+
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="未提供认证令牌")
+
     token = credentials.credentials
     payload = await decode_jwt(token)
 

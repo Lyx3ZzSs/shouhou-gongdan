@@ -79,9 +79,9 @@ pip install -r requirements.txt
 #    后续增量迁移：alembic upgrade head
 alembic stamp head
 
-# 4. 启动服务 (端口 8001)
+# 4. 启动服务 (端口 8093)
 python -m app.main
-# 或: uvicorn app.main:app --reload --port 8001
+# 或: uvicorn app.main:app --reload --port 8093
 ```
 
 ### 前端
@@ -90,11 +90,11 @@ python -m app.main
 cd frontend
 npm install
 
-# 启动开发服务器 (端口 5173)
+# 启动开发服务器 (端口 5193)
 npm run dev
 ```
 
-Vite 自动将 `/api` 代理到 `http://localhost:8001`。
+Vite 自动将 `/api` 代理到 `http://localhost:8093`。
 
 ### 生成 API 类型
 

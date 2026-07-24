@@ -13,7 +13,7 @@ async def acquire_lock(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     service = get_lock_service()
-    return await service.acquire(workorder_id, current_user.user_id, current_user.name)
+    return await service.acquire(workorder_id, current_user.user_id, current_user.display_name)
 
 
 @router.delete("/{workorder_id}/lock", response_model=LockStatus)

@@ -15,7 +15,7 @@ from app.schemas.review import (
     StashRequest, StashResponse, StashData,
     PaginatedWorkOrderSummary,
 )
-from app.services.review_service import ReviewService, background_sync_to_xiaoshouyi
+from app.services.review_service import ReviewService, ConfirmResult, background_sync_to_xiaoshouyi
 from app.services.query_service import WorkOrderQueryService
 from app.core.database import get_db, async_session
 from app.models.audit_log import WorkOrderAuditLog
@@ -60,6 +60,7 @@ async def get_workorder(
 async def review_workorder(
     workorder_id: str,
     request: ReviewRequest,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(require_any_role),
     db: AsyncSession = Depends(get_db),
 ):
@@ -80,7 +81,15 @@ async def review_workorder(
         operator_name=current_user.display_name,
         operator_department=current_user.department_code,
     )
-    return ReviewResponse(**result)
+    # review() 现已委托给 confirm()，同样支持后台同步
+    if result.sync_idempotency_key is not None:
+        background_tasks.add_task(
+            background_sync_to_xiaoshouyi,
+            workorder_id,
+            result.sync_idempotency_key,
+            async_session,
+        )
+    return ReviewResponse(**result.response)
 
 
 @router.post("/{workorder_id}/confirm", response_model=ConfirmResponse)
@@ -107,16 +116,15 @@ async def confirm_workorder(
     )
 
     # 调度后台同步（在 HTTP 响应返回后执行）
-    if result.pop("_needs_sync", False):
-        idempotency_key = result.pop("_sync_idempotency_key", request.idempotency_key)
+    if result.sync_idempotency_key is not None:
         background_tasks.add_task(
             background_sync_to_xiaoshouyi,
             workorder_id,
-            idempotency_key,
+            result.sync_idempotency_key,
             async_session,
         )
 
-    return ConfirmResponse(**result)
+    return ConfirmResponse(**result.response)
 
 
 @router.post("/{workorder_id}/stash", response_model=StashResponse)

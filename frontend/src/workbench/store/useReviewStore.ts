@@ -115,7 +115,6 @@ function defaultExpandedGroups(ticket: ReviewTicket): Record<string, boolean> {
 
 function matchFilters(item: QueueItem, f: QueueFilters): boolean {
   if (f.status !== 'all' && item.status !== f.status) return false;
-  if (f.risk !== 'all' && item.riskLevel !== f.risk) return false;
   if (f.type !== 'all' && item.type !== f.type) return false;
   if (f.source !== 'all' && item.source !== f.source) return false;
   if (f.sla === 'warning' && item.slaRemainingMin > 60) return false;
@@ -191,7 +190,6 @@ interface ReviewStore {
   nextTicket: () => void;
 
   setFieldValue: (fieldId: string, value: unknown, reason: string) => void;
-  confirmField: (fieldId: string) => void;
   resetField: (fieldId: string) => void;
   undoChange: (fieldId: string) => void;
   useSuggestion: (fieldId: string) => void;
@@ -226,7 +224,6 @@ interface ReviewStore {
 
 const defaultFilters: QueueFilters = {
   status: 'all',
-  risk: 'all',
   type: 'all',
   source: 'all',
   sla: 'all',
@@ -266,7 +263,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   queueEmpty: false,
 
   density: 'standard',
-  leftCollapsed: false,
+  leftCollapsed: true,
   rightCollapsed: true,
   fieldFilter: 'all',
   expandedGroups: {},
@@ -448,30 +445,6 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       dirty: true,
       autoSaveStatus: 'saving',
       editingFieldId: null,
-    }));
-  },
-
-  confirmField: (fieldId) => {
-    const { ticket, fieldStates } = get();
-    if (!ticket) return;
-    const field = ticket.fields.find((f) => f.id === fieldId);
-    const prev = fieldStates[fieldId];
-    if (!prev) return;
-    const ts = nowIso();
-    set((s) => ({
-      fieldStates: { ...s.fieldStates, [fieldId]: { ...prev, status: 'confirmed' } },
-      auditLogs: [
-        {
-          id: uid('al'),
-          timestamp: ts,
-          category: 'field_change',
-          actor: '张三',
-          action: `确认「${field?.name ?? fieldId}」`,
-        },
-        ...s.auditLogs,
-      ],
-      dirty: true,
-      autoSaveStatus: 'saving',
     }));
   },
 

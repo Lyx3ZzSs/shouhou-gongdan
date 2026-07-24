@@ -30,7 +30,11 @@ export interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
 function parseUser(token: string): AuthUser {
-  const payload = JSON.parse(atob(token.split('.')[1]));
+  // JWT 使用 base64url 编码（- _ 无 padding），atob 只认标准 base64
+  const base64 = token.split('.')[1]
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const payload = JSON.parse(atob(base64));
   const roles: string[] =
     payload.resource_access?.['shouhou-gongdan-api']?.roles ?? [];
   return {

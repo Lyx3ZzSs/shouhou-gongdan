@@ -9,7 +9,7 @@ from app.core.database import get_db
 
 @pytest.fixture
 def mock_user():
-    return CurrentUser(user_id="agent-001", name="张三", role="customer_service_agent", department="售后部")
+    return CurrentUser(user_id="agent-001", username="张三", display_name="张三", email="zhangsan@test.com", department_code="售后部", department_name="售后服务部", roles=["agent_admin"])
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ async def test_review_confirm_success(client, mock_user):
             "session_id": "sess-001",
             "version": 1,
             "changes": [
-                {"op": "replace", "path": "/problem_category_l1", "field_label": "问题分类",
+                {"op": "replace", "path": "/problemType1__c", "field_label": "问题分类-1级",
                  "old_value": "数据问题", "new_value": "工程问题"},
             ],
             "reject_reason": None,
@@ -182,7 +182,7 @@ async def test_confirm_endpoint_success(client):
             "session_id": "sess-007",
             "version": 1,
             "changes": [
-                {"op": "replace", "path": "/problem_category_l1", "field_label": "问题分类",
+                {"op": "replace", "path": "/problemType1__c", "field_label": "问题分类-1级",
                  "old_value": "数据问题", "new_value": "工程问题"},
             ],
             "reject_reason": None,

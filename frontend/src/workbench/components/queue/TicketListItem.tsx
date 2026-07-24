@@ -2,7 +2,6 @@ import type { KeyboardEvent } from 'react';
 import { FileEdit, Lock, Save } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { RiskTag } from '@/workbench/components/primitives/RiskTag';
 import { SLACountdown } from '@/workbench/components/primitives/SLACountdown';
 import { formatDateTime } from '@/workbench/lib/format';
 import type { QueueItem, QueueItemStatus } from '@/workbench/types';
@@ -61,9 +60,8 @@ export function TicketListItem({ item, selected, onSelect }: TicketListItemProps
         <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" aria-hidden />
       )}
 
-      {/* 行1：风险 + 编号 + 状态 */}
+      {/* 行1：编号 + 状态 */}
       <div className="flex items-center gap-2">
-        <RiskTag level={item.riskLevel} />
         <span className="text-xs font-medium text-muted-foreground">
           {item.serialNumber}
         </span>

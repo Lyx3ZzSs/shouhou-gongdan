@@ -1,16 +1,20 @@
+from datetime import datetime
 from pydantic import BaseModel, field_validator
 from typing import Any, Literal
 
-ALLOWED_FIELDS = {
-    "station_name", "dispatch_name", "project_code", "project_name",
-    "project_province", "customer_name", "problem_description", "feedback_channel",
-    "product_line", "product_category", "product_type", "customer_level",
-    "problem_category_l1", "problem_category_l2", "problem_category_l3",
-    "order_type", "problem_type", "fault_category", "fault_detail",
-    "responsible_person", "responsible_department", "primary_department",
-    "after_sales_person", "transferred_person", "transferred_department",
-    "order_level", "fault_level", "onsite_level", "required_solve_time",
-}
+def _coerce_datetime_to_iso(v: datetime | str | None) -> str | None:
+    """ORM 返回 datetime 对象时转为 ISO 字符串。"""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.isoformat()
+    return str(v)
+
+
+from app.core.field_config import load_field_config
+
+# ALLOWED_FIELDS 从 field_config.yaml 自动生成，无需手动维护
+ALLOWED_FIELDS: set[str] = load_field_config().allowed_keys
 
 MAX_TEXT_FIELD_LENGTH = 5000
 
@@ -52,10 +56,16 @@ class WorkOrderSummary(BaseModel):
     """Summary row for GET /api/workorders list."""
     id: str
     serial_number: str | None = None
-    station_name: str | None = None
+    name: str | None = None
     status: str | None = None
-    customer_name: str | None = None
+    caseAccountId: str | None = None
+    bigCustShortName__c: str | None = None
     created_at: str | None = None
+
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def coerce_created_at(cls, v: datetime | str | None) -> str | None:
+        return _coerce_datetime_to_iso(v)
 
     class Config:
         from_attributes = True
@@ -75,35 +85,54 @@ class WorkOrderResponse(BaseModel):
     created_at: str | None = None
     initiator: str | None = None
     initiator_department: str | None = None
-    station_name: str | None = None
-    dispatch_name: str | None = None
-    project_code: str | None = None
-    project_name: str | None = None
-    project_province: str | None = None
-    customer_name: str | None = None
-    problem_description: str | None = None
-    feedback_channel: str | None = None
-    product_line: str | None = None
-    product_category: str | None = None
-    product_type: str | None = None
-    customer_level: str | None = None
-    problem_category_l1: str | None = None
-    problem_category_l2: str | None = None
-    problem_category_l3: str | None = None
-    order_type: str | None = None
-    problem_type: str | None = None
-    fault_category: str | None = None
-    fault_detail: str | None = None
-    responsible_person: str | None = None
-    responsible_department: str | None = None
-    primary_department: str | None = None
-    after_sales_person: str | None = None
-    transferred_person: str | None = None
-    transferred_department: str | None = None
-    order_level: str | None = None
-    fault_level: str | None = None
-    onsite_level: str | None = None
-    required_solve_time: str | None = None
+
+    # ---- 销售易 serviceCase API 业务字段 ----
+
+    # Required fields
+    ownerId: str | None = None
+    dimDepart: str | None = None
+    entityType: str | None = None
+    name: str | None = None
+    caseSource: str | None = None
+    feedbackChannel__c: str | None = None
+    workOrderStatus__c: str | None = None
+    caseDescription: str | None = None
+    caseStatus: str | None = None
+
+    # Optional fields
+    caseAccountId: str | None = None
+    custLevel1__c: str | None = None
+    projectName__c: str | None = None
+    projectProvince__c: str | None = None
+    bigCustShortName__c: str | None = None
+    serviceCycleStart__c: str | None = None
+    serviceCycleEnd__c: str | None = None
+    isOfflineApply__c: str | None = None
+    isOverdueService__c: str | None = None
+    problemLevel__c: str | None = None
+    problemType1__c: str | None = None
+    problemType2__c: str | None = None
+    problemType3__c: str | None = None
+    feedbackCount__c: str | None = None
+    problemResponsible__c: str | None = None
+    problemDept__c: str | None = None
+    feedbackUserName__c: str | None = None
+    feedbackUserContact__c: str | None = None
+    needCallBack__c: str | None = None
+    isHandled__c: str | None = None
+    needOnSite__c: str | None = None
+    remark__c: str | None = None
+    relatedAttachment__c: str | None = None
+    planFeedbackTime__c: str | None = None
+    requireSolveTime__c: str | None = None
+
+    # Hidden
+    defectFlag__c: str | None = None
+
+    @field_validator('created_at', 'last_rejected_at', mode='before')
+    @classmethod
+    def coerce_datetime_fields(cls, v: datetime | str | None) -> str | None:
+        return _coerce_datetime_to_iso(v)
 
     class Config:
         from_attributes = True
@@ -150,14 +179,18 @@ class ReviewResponse(BaseModel):
 
 
 class ConfirmResponse(BaseModel):
-    """确认提交响应 — 新增 sync_status 表示销售易同步状态。"""
+    """确认提交响应。
+
+    sync_status 始终为 "pending"：确认提交后由 BackgroundTasks 异步同步至销售易，
+    实际同步结果（synced / failed）需通过 GET /api/admin/sync-failures 查询。
+    """
     review_id: str
     workorder_id: str
     status: Literal["confirmed", "rejected"]
     change_count: int
     bad_case_count: int
     next_status: str
-    sync_status: Literal["pending", "synced", "failed"] = "pending"
+    sync_status: Literal["pending", "syncing", "synced", "failed"] = "pending"
 
 
 class StashRequest(BaseModel):
@@ -181,6 +214,14 @@ class StashData(BaseModel):
 
 class StashResponse(BaseModel):
     status: str  # "ok"
+
+
+class PaginatedWorkOrderSummary(BaseModel):
+    """分页工单摘要列表。"""
+    items: list[WorkOrderSummary]
+    total: int
+    offset: int
+    limit: int
 
 
 class LockStatus(BaseModel):

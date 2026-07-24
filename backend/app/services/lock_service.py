@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
@@ -74,7 +74,7 @@ class LockService:
     async def acquire(self, workorder_id: str, operator_id: str, operator_name: str) -> dict:
         """获取锁。返回 {locked, owner, locked_minutes?}"""
         key = f"{LOCK_PREFIX}{workorder_id}"
-        now = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         value = f"{operator_id}:{operator_name}:{now}"
 
         # 原子尝试获取锁：SET NX 只在 key 不存在时写入
@@ -92,10 +92,10 @@ class LockService:
                 return {"locked": True, "owner": owner_name}
             else:
                 # 计算实际锁定分钟数
-                locked_at_dt = datetime.datetime.fromisoformat(locked_at)
+                locked_at_dt = datetime.fromisoformat(locked_at)
                 if locked_at_dt.tzinfo is None:
-                    locked_at_dt = locked_at_dt.replace(tzinfo=datetime.UTC)
-                elapsed = (datetime.datetime.now(datetime.UTC) - locked_at_dt).total_seconds()
+                    locked_at_dt = locked_at_dt.replace(tzinfo=timezone.utc)
+                elapsed = (datetime.now(timezone.utc) - locked_at_dt).total_seconds()
                 locked_minutes = max(1, int(elapsed / 60) + 1)
                 return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes}
 
@@ -145,6 +145,13 @@ class LockService:
             return None
         owner_id, owner_name, locked_at = existing.decode().split(":", maxsplit=2)
         return {"operator_id": owner_id, "operator_name": owner_name, "locked_at": locked_at}
+
+    async def close(self) -> None:
+        """关闭 Redis 连接池（用于应用优雅关闭）。"""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
+            self._loop_id = None
 
 
 class LockLostError(Exception):

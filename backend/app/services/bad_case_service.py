@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bad_case import BadCaseSample
 from app.schemas.review import FieldChange
@@ -15,7 +15,7 @@ class BadCaseService:
         audit_log_ids: list[int],
         changes: list[FieldChange],
     ):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         samples = [
             BadCaseSample(
                 workorder_id=workorder_id,

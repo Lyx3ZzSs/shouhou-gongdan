@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import WorkOrderAuditLog
 from app.schemas.review import FieldChange
@@ -18,7 +18,7 @@ class AuditService:
         operator_name: str,
         change_type: str = "replace",
     ) -> list[WorkOrderAuditLog]:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         logs = [
             WorkOrderAuditLog(
                 workorder_id=workorder_id,
@@ -57,7 +57,7 @@ class AuditService:
             change_type="rejected",
             operator_id=operator_id,
             operator_name=operator_name,
-            operated_at=datetime.utcnow(),
+            operated_at=datetime.now(timezone.utc),
         )
         self.db.add(log)
         await self.db.flush()
