@@ -26,7 +26,8 @@ class TestGetCurrentUser:
             scheme="Bearer", credentials=token
         )
 
-        with patch("app.auth.dependencies.decode_jwt") as mock_decode:
+        with patch("app.auth.dependencies.settings.AUTH_ENABLED", True), \
+             patch("app.auth.dependencies.decode_jwt") as mock_decode:
             mock_decode.return_value = pyjwt.decode(
                 token,
                 options={"verify_signature": False},
@@ -60,7 +61,8 @@ class TestGetCurrentUser:
             scheme="Bearer", credentials=token
         )
 
-        with patch("app.auth.dependencies.decode_jwt") as mock_decode:
+        with patch("app.auth.dependencies.settings.AUTH_ENABLED", True), \
+             patch("app.auth.dependencies.decode_jwt") as mock_decode:
             mock_decode.return_value = pyjwt.decode(
                 token,
                 options={"verify_signature": False},
@@ -81,7 +83,8 @@ class TestGetCurrentUser:
             scheme="Bearer", credentials=token
         )
 
-        with patch("app.auth.dependencies.decode_jwt") as mock_decode:
+        with patch("app.auth.dependencies.settings.AUTH_ENABLED", True), \
+             patch("app.auth.dependencies.decode_jwt") as mock_decode:
             mock_decode.return_value = pyjwt.decode(
                 token,
                 options={"verify_signature": False},

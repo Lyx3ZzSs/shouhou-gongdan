@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, ArrowDown, FileEdit, Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowDown, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useReviewStore, useReviewProgress } from '../../store/useReviewStore';
+import { useReviewStore, useReviewProgress, useEffectiveChanges } from '../../store/useReviewStore';
 import type { FieldFilter } from '../../types';
 import { cn } from '@/lib/utils';
 
@@ -23,49 +23,54 @@ export function ReviewToolbar() {
   const toggleDensity = useReviewStore((s) => s.toggleDensity);
   const jumpToNextAnomaly = useReviewStore((s) => s.jumpToNextAnomaly);
   const progress = useReviewProgress();
+  const changes = useEffectiveChanges();
 
   return (
     <div className="sticky top-0 z-20 flex h-10 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
       <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setFieldFilter(f.value)}
-            aria-pressed={fieldFilter === f.value}
-            className={cn(
-              'rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors',
-              fieldFilter === f.value
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 审核进度条 */}
-      <div className="mx-2 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <CheckCircle2 className="h-3 w-3 text-success" />
-          {progress.confirmed}
-          <span className="hidden sm:inline">已确认</span>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <FileEdit className="h-3 w-3 text-primary" />
-          {progress.modified}
-          <span className="hidden sm:inline">已修改</span>
-        </span>
-        {progress.pendingAnomalies > 0 && (
-          <span className="inline-flex items-center gap-1 font-medium text-warning">
-            <AlertTriangle className="h-3 w-3" />
-            {progress.pendingAnomalies}
-            <span className="hidden sm:inline">待处理</span>
-          </span>
-        )}
-        <span className="tabular-nums">
-          {progress.confirmed + progress.modified}/{progress.total}
-        </span>
+        {FILTERS.map((f) => {
+          const anomalyCount = progress.pendingAnomalies;
+          const modifiedCount = changes.length;
+          return (
+            <button
+              key={f.value}
+              onClick={() => setFieldFilter(f.value)}
+              aria-pressed={fieldFilter === f.value}
+              className={cn(
+                'rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors',
+                fieldFilter === f.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+            >
+              {f.label}
+              {f.value === 'abnormal' && anomalyCount > 0 && (
+                <span
+                  className={cn(
+                    'ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] tabular-nums',
+                    fieldFilter === f.value
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-warning/20 text-warning',
+                  )}
+                >
+                  {anomalyCount}
+                </span>
+              )}
+              {f.value === 'modified' && modifiedCount > 0 && (
+                <span
+                  className={cn(
+                    'ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] tabular-nums',
+                    fieldFilter === f.value
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-primary/20 text-primary',
+                  )}
+                >
+                  {modifiedCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex-1" />

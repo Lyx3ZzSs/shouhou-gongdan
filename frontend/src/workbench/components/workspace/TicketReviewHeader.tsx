@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Copy, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { RiskTag } from '../primitives/RiskTag';
 import { SLACountdown } from '../primitives/SLACountdown';
 import { useReviewStore } from '../../store/useReviewStore';
-import { formatDateTime } from '../../lib/format';
 
-const STATUS_LABEL: Record<string, { label: string; variant: 'default' | 'warning' | 'success' | 'muted' }> = {
+const STATUS_LABEL: Record<
+  string,
+  { label: string; variant: 'default' | 'warning' | 'success' | 'muted' }
+> = {
   pending_review: { label: '待审核', variant: 'default' },
   reviewing: { label: '审核中', variant: 'warning' },
   returned: { label: '已退回', variant: 'warning' },
@@ -20,25 +21,35 @@ export function TicketReviewHeader() {
   const beingEditedBy = useReviewStore((s) => s.beingEditedBy);
   const [copied, setCopied] = useState(false);
 
+  // Cleanup copy timeout on unmount
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
   if (!ticket) return null;
 
-  const statusInfo = STATUS_LABEL[ticket.status] ?? { label: ticket.status, variant: 'muted' as const };
+  const statusInfo = STATUS_LABEL[ticket.status] ?? {
+    label: ticket.status,
+    variant: 'muted' as const,
+  };
 
   const copySerial = () => {
     navigator.clipboard?.writeText(ticket.serialNumber);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
     <div className="shrink-0 border-b border-border bg-background px-5 py-3">
-      {/* 第 1 行：标题 + 编号 + 主操作 */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-lg font-semibold leading-tight">{ticket.title}</h1>
+      {/* 第 1 行：标题 + 状态 */}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="truncate text-lg font-semibold leading-tight">
+              {ticket.title}
+            </h1>
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-            <RiskTag level={ticket.riskLevel} />
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-mono">{ticket.serialNumber}</span>
@@ -64,9 +75,19 @@ export function TicketReviewHeader() {
       {/* 第 2 行：元信息 */}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>来源：{ticket.source}</span>
-        <span>创建：{formatDateTime(ticket.createdAt)}</span>
+        <span>
+          创建：
+          {new Date(ticket.createdAt).toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
         <span className="inline-flex items-center gap-1">
-          SLA：<SLACountdown remainingMin={ticket.slaRemainingMin} />
+          SLA：
+          <SLACountdown remainingMin={ticket.slaRemainingMin} />
         </span>
         <span className="inline-flex items-center gap-1">
           <UserCircle2 className="h-3.5 w-3.5" />

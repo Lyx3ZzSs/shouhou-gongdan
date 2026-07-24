@@ -14,6 +14,7 @@ import { SubmittedToast } from './components/SubmittedToast';
 import { useReviewStore } from './store/useReviewStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAutoSave } from './hooks/useAutoSave';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { cn } from '@/lib/utils';
 
 /** 左侧栏收起后的窄轨道 */
@@ -74,7 +75,11 @@ export function ReviewWorkbench() {
               leftCollapsed && 'max-lg:-translate-x-full',
             )}
           >
-            {leftCollapsed ? <LeftRail /> : <ReviewQueue />}
+            {leftCollapsed ? <LeftRail /> : (
+              <ErrorBoundary panelName="待审核队列" className="h-full">
+                <ReviewQueue />
+              </ErrorBoundary>
+            )}
           </div>
 
           {/* 移动端：队列展开时的遮罩 */}
@@ -86,7 +91,9 @@ export function ReviewWorkbench() {
             />
           )}
 
-          <ReviewWorkspace />
+          <ErrorBoundary panelName="工单编辑区" className="min-h-0 flex-1">
+            <ReviewWorkspace />
+          </ErrorBoundary>
 
           {/* 右侧控制台 — 桌面端内联，移动端覆盖层 */}
           <div
@@ -96,7 +103,11 @@ export function ReviewWorkbench() {
               rightCollapsed && 'max-lg:translate-x-full',
             )}
           >
-            {rightCollapsed ? <RightRail /> : <ReviewSidebar />}
+            {rightCollapsed ? <RightRail /> : (
+              <ErrorBoundary panelName="审核控制台" className="h-full">
+                <ReviewSidebar />
+              </ErrorBoundary>
+            )}
           </div>
 
           {/* 移动端：侧栏展开时的遮罩 */}

@@ -2,6 +2,10 @@
 # 启动: docker compose up -d
 # 停止: docker compose down
 # 清理数据: docker compose down -v
+#
+# ⚠️ 重要：部署到服务器前必须通过环境变量设置强密码
+#    export POSTGRES_PASSWORD=<强随机密码>
+#    或在 .env 文件中配置 POSTGRES_PASSWORD
 
 services:
   postgres:
@@ -9,7 +13,7 @@ services:
     container_name: shouhou-gongdan-pg
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: JvUcMbDxjYY4M8sj
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: shouhou_gongdan
     ports:
       - "5432:5432"

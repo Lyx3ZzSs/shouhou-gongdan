@@ -1,5 +1,6 @@
-import { KeycloakProvider } from './auth';
+import { KeycloakProvider, MockAuthProvider } from './auth';
 import { useAuth } from './auth';
+import { authEnabled } from './auth/keycloak';
 import { ReviewWorkbench } from './workbench/ReviewWorkbench';
 
 function AppContent() {
@@ -26,6 +27,14 @@ function AppContent() {
 }
 
 function App() {
+  if (!authEnabled) {
+    return (
+      <MockAuthProvider>
+        <AppContent />
+      </MockAuthProvider>
+    );
+  }
+
   return (
     <KeycloakProvider>
       <AppContent />

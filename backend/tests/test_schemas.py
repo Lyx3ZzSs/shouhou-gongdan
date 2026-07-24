@@ -4,13 +4,13 @@ from app.schemas.review import FieldChange, ReviewRequest, ALLOWED_FIELDS
 def test_field_change_valid():
     fc = FieldChange(
         op="replace",
-        path="/problem_category_l1",
-        field_label="问题分类",
-        old_value="数据问题",
-        new_value="工程问题",
+        path="/problemType1__c",
+        field_label="问题分类-1级",
+        old_value="现场问题-1",
+        new_value="数据优化-2",
     )
     assert fc.op == "replace"
-    assert fc.old_value == "数据问题"
+    assert fc.old_value == "现场问题-1"
 
 def test_review_request_confirm():
     req = ReviewRequest(
@@ -18,9 +18,9 @@ def test_review_request_confirm():
         version=1,
         changes=[
             FieldChange(
-                op="replace", path="/problem_category_l1",
-                field_label="问题分类", old_value="数据问题",
-                new_value="工程问题",
+                op="replace", path="/problemType1__c",
+                field_label="问题分类-1级", old_value="现场问题-1",
+                new_value="数据优化-2",
             )
         ],
         reject_reason=None,
@@ -38,12 +38,15 @@ def test_review_request_reject():
     assert req.reject_reason == "分类与客户描述不符"
 
 def test_allowed_fields_contains_required():
-    assert "station_name" in ALLOWED_FIELDS
-    assert "problem_category_l1" in ALLOWED_FIELDS
-    assert "responsible_person" in ALLOWED_FIELDS
-    assert "order_level" in ALLOWED_FIELDS
-    assert "customer_level" in ALLOWED_FIELDS
-    assert "product_type" in ALLOWED_FIELDS
+    assert "ownerId" in ALLOWED_FIELDS
+    assert "name" in ALLOWED_FIELDS
+    assert "caseSource" in ALLOWED_FIELDS
+    assert "caseStatus" in ALLOWED_FIELDS
+    assert "problemType1__c" in ALLOWED_FIELDS
+    assert "problemResponsible__c" in ALLOWED_FIELDS
+    assert "custLevel1__c" in ALLOWED_FIELDS
+    assert "workOrderStatus__c" in ALLOWED_FIELDS
+    assert "defectFlag__c" in ALLOWED_FIELDS
 
 def test_field_change_rejects_invalid_op():
     with pytest.raises(ValueError):

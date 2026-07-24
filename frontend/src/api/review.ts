@@ -3,7 +3,7 @@ import type {
   LockStatus,
 } from '../types/review';
 import type { components } from '../types/api';
-import keycloak from '../auth/keycloak';
+import keycloak, { authEnabled } from '../auth/keycloak';
 
 // ---- Type aliases derived from the generated OpenAPI spec ----
 export type GeneratedWorkOrderSummary = components['schemas']['WorkOrderSummary'];
@@ -16,6 +16,7 @@ export type GeneratedAuditLogEntry = components['schemas']['AuditLogEntry'];
 const BASE = '/api/workorders';
 
 function getToken(): string {
+  if (!authEnabled) return 'dev-token';
   return keycloak.token ?? '';
 }
 
@@ -36,7 +37,7 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
 
   let res = await doFetch();
 
-  if (res.status === 401) {
+  if (res.status === 401 && authEnabled) {
     try {
       await keycloak.updateToken(30);
       res = await doFetch();
@@ -52,7 +53,9 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
 export async function fetchWorkOrderList(): Promise<GeneratedWorkOrderSummary[]> {
   const res = await authFetch(BASE);
   if (!res.ok) throw new Error(`获取工单列表失败: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  // 后端返回 PaginatedWorkOrderSummary { items, total, offset, limit }
+  return data.items ?? [];
 }
 
 export async function fetchWorkOrder(id: string): Promise<WorkOrderData> {

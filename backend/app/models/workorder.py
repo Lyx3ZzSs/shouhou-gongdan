@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy.orm import relationship
 
 from .base import Base
 
@@ -6,9 +7,8 @@ from .base import Base
 class WorkOrder(Base):
     __tablename__ = "workorder"
 
-    # NOTE: 此模型仅包含审核功能所需字段（约35列）。
-    # 实际生产库 workorder 表有 132+ 列，其余列未在 ORM 模型中定义。
-    # 执行 alembic revision --autogenerate 会检测到缺失列并生成 DROP COLUMN，
+    # NOTE: 此模型仅包含审核功能所需字段（约52列）。
+    # 业务字段来自销售易 serviceCase API（POST /openapi/insertServiceCase）。
     # 生产环境迁移请务必使用手动编写的迁移脚本，而非 autogenerate。
 
     # Primary key
@@ -24,7 +24,9 @@ class WorkOrder(Base):
     last_rejected_at = Column(DateTime, nullable=True)
     review_notes = Column(Text, nullable=True)
     sync_status = Column(String(16), nullable=False, default='pending')
-    # 'pending' | 'synced' | 'failed' — 销售易同步状态
+    # 'pending' | 'syncing' | 'synced' | 'failed' — 销售易同步状态
+    sync_attempts = Column(Integer, nullable=False, default=0)
+    sync_last_error = Column(Text, nullable=True)
 
     # Read-only metadata
     serial_number = Column(String(64), nullable=True)
@@ -33,33 +35,56 @@ class WorkOrder(Base):
     initiator = Column(String(64), nullable=True)
     initiator_department = Column(String(128), nullable=True)
 
-    # Editable fields (mapped to ALLOWED_FIELDS + frontend WorkOrderData)
-    station_name = Column(String(255), nullable=True)
-    dispatch_name = Column(String(255), nullable=True)
-    project_code = Column(String(64), nullable=True)
-    project_name = Column(String(255), nullable=True)
-    project_province = Column(String(64), nullable=True)
-    customer_name = Column(String(255), nullable=True)
-    problem_description = Column(Text, nullable=True)
-    feedback_channel = Column(String(64), nullable=True)
-    product_line = Column(String(64), nullable=True)
-    product_category = Column(String(64), nullable=True)
-    product_type = Column(String(64), nullable=True)
-    customer_level = Column(String(32), nullable=True)
-    problem_category_l1 = Column(String(64), nullable=True)
-    problem_category_l2 = Column(String(64), nullable=True)
-    problem_category_l3 = Column(String(64), nullable=True)
-    order_type = Column(String(32), nullable=True)
-    problem_type = Column(String(64), nullable=True)
-    fault_category = Column(String(64), nullable=True)
-    fault_detail = Column(Text, nullable=True)
-    responsible_person = Column(String(64), nullable=True)
-    responsible_department = Column(String(128), nullable=True)
-    primary_department = Column(String(128), nullable=True)
-    after_sales_person = Column(String(64), nullable=True)
-    transferred_person = Column(String(64), nullable=True)
-    transferred_department = Column(String(128), nullable=True)
-    order_level = Column(String(32), nullable=True)
-    fault_level = Column(String(32), nullable=True)
-    onsite_level = Column(String(32), nullable=True)
-    required_solve_time = Column(String(64), nullable=True)
+    # ---- 销售易 serviceCase API 业务字段 (33 + 1 hidden) ----
+
+    # Required fields (not_null=1 in API spec)
+    ownerId = Column(String(64), nullable=True)                # 所有人（北森员工编码）
+    dimDepart = Column(String(128), nullable=True)              # 所属部门（北森部门编码）
+    entityType = Column(String(32), nullable=True, default='11010045500001')  # 业务类型
+    name = Column(String(255), nullable=True)                   # 工单主题
+    caseSource = Column(String(32), nullable=True)              # 工单来源
+    feedbackChannel__c = Column(String(32), nullable=True)      # 反馈渠道
+    workOrderStatus__c = Column(String(32), nullable=True)      # 工单类型
+    caseDescription = Column(Text, nullable=True)               # 工单描述
+    caseStatus = Column(String(16), nullable=True)              # 工单状态
+
+    # Optional fields
+    caseAccountId = Column(String(64), nullable=True)           # 场站名称（场站编号）
+    custLevel1__c = Column(String(32), nullable=True)           # 客户级别
+    projectName__c = Column(String(255), nullable=True)         # 项目名称（项目编号）
+    projectProvince__c = Column(String(64), nullable=True)      # 项目省份
+    bigCustShortName__c = Column(String(128), nullable=True)    # 大客户简称
+    serviceCycleStart__c = Column(String(32), nullable=True)    # 周期服务开始时间（时间戳）
+    serviceCycleEnd__c = Column(String(32), nullable=True)      # 周期服务结束时间（时间戳）
+    isOfflineApply__c = Column(String(4), nullable=True)        # 是否线下申请
+    isOverdueService__c = Column(String(4), nullable=True)      # 是否超期服务
+    problemLevel__c = Column(String(32), nullable=True)         # 问题等级
+    problemType1__c = Column(String(32), nullable=True)         # 问题分类-1级
+    problemType2__c = Column(String(64), nullable=True)         # 问题分类-2级
+    problemType3__c = Column(String(64), nullable=True)         # 问题分类-3级
+    feedbackCount__c = Column(String(16), nullable=True)        # 反馈次数
+    problemResponsible__c = Column(String(64), nullable=True)   # 问题责任人（北森员工编码）
+    problemDept__c = Column(String(128), nullable=True)         # 问题责任部门（北森部门编码）
+    feedbackUserName__c = Column(String(64), nullable=True)     # 反馈人姓名
+    feedbackUserContact__c = Column(String(16), nullable=True)  # 反馈人联系方式（11位手机号）
+    needCallBack__c = Column(String(4), nullable=True)          # 是否要求回电话
+    isHandled__c = Column(String(4), nullable=True)             # 是否处理
+    needOnSite__c = Column(String(4), nullable=True)            # 是否要求进场
+    remark__c = Column(Text, nullable=True)                     # 备注
+    relatedAttachment__c = Column(String(255), nullable=True)  # 相关附件
+    planFeedbackTime__c = Column(String(32), nullable=True)     # 方案反馈时间（时间戳）
+    requireSolveTime__c = Column(String(32), nullable=True)     # 要求解决时间（时间戳）
+
+    # Hidden field — sent to API but not displayed in UI
+    defectFlag__c = Column(String(4), nullable=True, default='1')  # 缺陷标记
+
+    # ORM relationships (lazy='raise'：访问时若未显式 eager-load 则抛出异常，避免意外 N+1）。
+    # 仅定义正向关系（WorkOrder → 关联表），不设 back_populates 以避免循环导入问题。
+    audit_logs = relationship(
+        "WorkOrderAuditLog", lazy="raise",
+        primaryjoin="WorkOrder.id == foreign(WorkOrderAuditLog.workorder_id)",
+    )
+    stash = relationship(
+        "WorkOrderStash", lazy="raise", uselist=False,
+        primaryjoin="WorkOrder.id == foreign(WorkOrderStash.workorder_id)",
+    )

@@ -3,20 +3,19 @@ import type {
   FieldGroupId,
   FieldReviewStatus,
   ReviewDecision,
-  RiskLevel,
   SavedView,
 } from '../types';
 
-/** 字段分组（按业务审核逻辑顺序） */
+/** 字段分组（按销售易 serviceCase API 业务逻辑） */
 export const FIELD_GROUPS: { id: FieldGroupId; name: string }[] = [
   { id: 'basic', name: '基本信息' },
-  { id: 'contact', name: '联系人与服务对象' },
+  { id: 'category', name: '工单分类' },
+  { id: 'project', name: '客户与项目' },
+  { id: 'service_period', name: '服务周期' },
   { id: 'description', name: '问题描述' },
-  { id: 'category', name: '分类与优先级' },
-  { id: 'address', name: '地址与区域' },
-  { id: 'requirement', name: '处理要求' },
-  { id: 'attachment', name: '附件与证据' },
-  { id: 'system', name: '系统生成信息' },
+  { id: 'feedback', name: '反馈信息' },
+  { id: 'handling', name: '处理信息' },
+  { id: 'system', name: '系统信息' },
 ];
 
 /** 修改原因选项（spec 第七节） */
@@ -78,16 +77,6 @@ export const DECISION_META: Record<
   draft: { label: '暂存', variant: 'muted' },
 };
 
-/** 风险等级元信息 */
-export const RISK_META: Record<
-  RiskLevel,
-  { label: string; variant: 'destructive' | 'warning' | 'muted'; dot: string }
-> = {
-  high: { label: '高风险', variant: 'destructive', dot: 'bg-destructive' },
-  medium: { label: '中风险', variant: 'warning', dot: 'bg-warning' },
-  low: { label: '低风险', variant: 'muted', dot: 'bg-muted-foreground' },
-};
-
 /** 队列状态选项 */
 export const QUEUE_STATUS_OPTIONS = [
   { value: 'all', label: '全部状态' },
@@ -95,13 +84,6 @@ export const QUEUE_STATUS_OPTIONS = [
   { value: 'reviewing', label: '审核中' },
   { value: 'returned', label: '已退回' },
   { value: 'stashed', label: '已暂存' },
-];
-
-export const RISK_OPTIONS = [
-  { value: 'all', label: '全部风险' },
-  { value: 'high', label: '高风险' },
-  { value: 'medium', label: '中风险' },
-  { value: 'low', label: '低风险' },
 ];
 
 export const SLA_OPTIONS = [
@@ -130,7 +112,6 @@ export const SOURCE_OPTIONS = [
 /** 预置保存视图（spec 第三节） */
 export const DEFAULT_SAVED_VIEWS: SavedView[] = [
   { id: 'mine', name: '我的待审核', filters: { status: 'pending_review' } },
-  { id: 'high_risk', name: '高风险工单', filters: { risk: 'high' } },
   { id: 'near_timeout', name: '即将超时', filters: { sla: 'warning' } },
   { id: 'returned', name: '退回后重新提交', filters: { status: 'returned' } },
 ];

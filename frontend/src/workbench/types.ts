@@ -14,18 +14,16 @@ export type ReviewDecision =
   | 'rejected'
   | 'draft';
 
-export type RiskLevel = 'high' | 'medium' | 'low';
-
 export type AnomalyType = 'blocking_error' | 'warning' | 'info' | 'system_suggestion';
 
 export type FieldGroupId =
   | 'basic'
-  | 'contact'
-  | 'description'
   | 'category'
-  | 'address'
-  | 'requirement'
-  | 'attachment'
+  | 'project'
+  | 'service_period'
+  | 'description'
+  | 'feedback'
+  | 'handling'
   | 'system';
 
 export type FieldType =
@@ -101,7 +99,6 @@ export interface ReviewTicket {
   title: string;
   type: string;
   urgency: 'high' | 'medium' | 'low';
-  riskLevel: RiskLevel;
   source: string;
   status: 'pending_review' | 'reviewing' | 'returned' | 'rejected' | 'approved';
   createdAt: string;
@@ -120,7 +117,6 @@ export interface QueueItem {
   title: string;
   type: string;
   source: string;
-  riskLevel: RiskLevel;
   status: QueueItemStatus;
   anomalyCount: number;
   slaRemainingMin: number;
@@ -146,7 +142,6 @@ export type AutoSaveStatus = 'idle' | 'saving' | 'saved' | 'failed' | 'offline';
 /** 队列筛选条件 */
 export interface QueueFilters {
   status: string; // 'all' | status values
-  risk: string; // 'all' | high|medium|low
   type: string; // 'all' | type values
   source: string;
   sla: string; // 'all' | normal|warning|timeout

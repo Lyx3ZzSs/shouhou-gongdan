@@ -1,5 +1,5 @@
 from sqlalchemy import Column, BigInteger, String, Text, DateTime, ForeignKey, Index
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .base import Base
 
@@ -16,7 +16,7 @@ class BadCaseSample(Base):
     sample_status = Column(String(16), nullable=False, default="pending")
     source = Column(String(16), nullable=False, default="review_correction")
     # PostgreSQL TIMESTAMP is sufficient for development and production use.
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("idx_status", "sample_status"),
