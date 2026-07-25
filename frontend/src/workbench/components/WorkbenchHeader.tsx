@@ -17,7 +17,9 @@ import {
 import { AutoSaveIndicator } from './primitives/AutoSaveIndicator';
 import { useReviewStore } from '../store/useReviewStore';
 
-export function WorkbenchHeader() {
+interface Props { onNavigateStats: () => void }
+
+export function WorkbenchHeader({ onNavigateStats }: Props) {
   const autoSaveStatus = useReviewStore((s) => s.autoSaveStatus);
   const setFilters = useReviewStore((s) => s.setFilters);
   const keyword = useReviewStore((s) => s.filters.keyword);
@@ -66,7 +68,7 @@ export function WorkbenchHeader() {
           <DropdownMenuLabel>客户服务部 · 张三</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem>个人设置</DropdownMenuItem>
-          <DropdownMenuItem>审核统计</DropdownMenuItem>
+          <DropdownMenuItem onClick={onNavigateStats}>审核统计</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="text-destructive">退出登录</DropdownMenuItem>
         </DropdownMenuContent>

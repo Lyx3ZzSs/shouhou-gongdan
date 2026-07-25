@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.routers import lock, review
+from app.routers import lock, review, stats
 from app.services.lock_service import get_lock_service
 from app.services.review_service import recover_orphan_syncs
 from app.core.database import async_session, dispose_engine
@@ -142,6 +142,7 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(lock.router)
 app.include_router(review.router)
 app.include_router(review.admin_router)
+app.include_router(stats.router)
 
 
 # ---- Health Check ----

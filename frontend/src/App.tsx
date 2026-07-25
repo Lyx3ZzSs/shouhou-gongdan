@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { KeycloakProvider, MockAuthProvider } from './auth';
 import { useAuth } from './auth';
 import { authEnabled } from './auth/keycloak';
 import { ReviewWorkbench } from './workbench/ReviewWorkbench';
+import { ReviewStats } from './stats/ReviewStats';
+
+type View = 'workbench' | 'stats';
 
 function AppContent() {
   const { authenticated, login } = useAuth();
+  const [view, setView] = useState<View>('workbench');
 
   if (!authenticated) {
     return (
@@ -23,7 +28,11 @@ function AppContent() {
     );
   }
 
-  return <ReviewWorkbench />;
+  if (view === 'stats') {
+    return <ReviewStats onBack={() => setView('workbench')} />;
+  }
+
+  return <ReviewWorkbench onNavigateStats={() => setView('stats')} />;
 }
 
 function App() {

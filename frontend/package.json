@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "dependencies": {
+    "@antv/g2plot": "^2.4.35",
     "@formily/antd-v5": "^1.2.0",
     "@formily/core": "^2.3.0",
     "@formily/react": "^2.3.0",

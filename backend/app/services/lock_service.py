@@ -154,7 +154,7 @@ class LockService:
         # 原子尝试获取锁：SET NX 只在 key 不存在时写入
         ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
         if ok:
-            return {"locked": True, "owner": operator_name}
+            return {"locked": True, "owner": operator_name, "is_new": True}
 
         # 锁已被他人持有，读取持有者信息
         existing = await self.redis.get(key)
@@ -170,9 +170,9 @@ class LockService:
                 new_value = self._encode_value(operator_id, owner_name, now)
                 result = await self._eval_refresh(key, old_value, new_value, LOCK_TTL)
                 if result:
-                    return {"locked": True, "owner": owner_name}
+                    return {"locked": True, "owner": owner_name, "is_new": False}
                 # 原子刷新失败 — 锁已被他人获取或已过期
-                return {"locked": False, "owner": "unknown"}
+                return {"locked": False, "owner": "unknown", "is_new": False}
             else:
                 # 计算实际锁定分钟数
                 locked_at_dt = datetime.fromisoformat(locked_at)
@@ -180,14 +180,14 @@ class LockService:
                     locked_at_dt = locked_at_dt.replace(tzinfo=timezone.utc)
                 elapsed = (datetime.now(timezone.utc) - locked_at_dt).total_seconds()
                 locked_minutes = max(1, int(elapsed / 60) + 1)
-                return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes}
+                return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes, "is_new": False}
 
         # 锁在 SET NX 和 GET 之间过期（极端情况），重试一次 SET NX
         ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
         if ok:
-            return {"locked": True, "owner": operator_name}
+            return {"locked": True, "owner": operator_name, "is_new": True}
         # 仍然失败，返回已锁定
-        return {"locked": False, "owner": "unknown"}
+        return {"locked": False, "owner": "unknown", "is_new": False}
 
     async def release(self, workorder_id: str, operator_id: str) -> None:
         """释放锁（原子）。仅持有者可释放，否则抛出 PermissionError"""

@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS workorder (
     sync_external_id VARCHAR(64)    NULL,
     sync_started_at TIMESTAMPTZ     NULL,
 
+    -- 审核计时
+    review_started_at        TIMESTAMPTZ     NULL,
+    review_duration_seconds  INTEGER         NULL,
+
     -- 只读元数据
     serial_number           VARCHAR(64)     NULL,
     status                  VARCHAR(32)     NULL,

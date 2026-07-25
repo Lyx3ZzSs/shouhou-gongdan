@@ -34,6 +34,12 @@ class WorkOrder(Base):
     sync_started_at = Column(DateTime(timezone=True), nullable=True)
     # 同步开始时间，用于判断 syncing 状态是否超时（recover_orphan_syncs）
 
+    # Review timing
+    review_started_at = Column(DateTime(timezone=True), nullable=True)
+    # 审核开始时间（锁首次获取时记录）
+    review_duration_seconds = Column(Integer, nullable=True)
+    # 审核耗时（秒），确认/驳回时计算
+
     # Read-only metadata
     serial_number = Column(String(64), nullable=True)
     status = Column(String(32), nullable=True)

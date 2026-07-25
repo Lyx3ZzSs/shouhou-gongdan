@@ -353,7 +353,12 @@ class ReviewService:
                 SET status = 'confirmed', version = version + 1,
                     reviewed_at = :now, reviewed_by = :operator_name,
                     sync_status = 'pending', sync_attempts = 0,
-                    sync_last_error = NULL, review_notes = :review_notes
+                    sync_last_error = NULL, review_notes = :review_notes,
+                    review_duration_seconds = CASE
+                        WHEN review_started_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (:now - review_started_at))::int
+                        ELSE NULL
+                    END
                 WHERE id = :id AND version = :version AND status != 'confirmed'
             """),
             {
@@ -425,7 +430,12 @@ class ReviewService:
                     last_rejected_at = :now,
                     review_notes = :review_notes,
                     sync_status = 'pending', sync_attempts = 0,
-                    sync_last_error = NULL
+                    sync_last_error = NULL,
+                    review_duration_seconds = CASE
+                        WHEN review_started_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (:now - review_started_at))::int
+                        ELSE NULL
+                    END
                 WHERE id = :id AND version = :version AND status != 'confirmed'
             """),
             {

@@ -47,7 +47,9 @@ function RightRail() {
   );
 }
 
-export function ReviewWorkbench() {
+interface Props { onNavigateStats: () => void }
+
+export function ReviewWorkbench({ onNavigateStats }: Props) {
   const init = useReviewStore((s) => s.init);
   const leftCollapsed = useReviewStore((s) => s.leftCollapsed);
   const rightCollapsed = useReviewStore((s) => s.rightCollapsed);
@@ -64,7 +66,7 @@ export function ReviewWorkbench() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex h-screen flex-col overflow-hidden bg-app text-foreground">
-        <WorkbenchHeader />
+        <WorkbenchHeader onNavigateStats={onNavigateStats} />
         <div className="flex min-h-0 flex-1 relative">
           {/* 左侧队列 — 桌面端内联，移动端覆盖层 */}
           <div
