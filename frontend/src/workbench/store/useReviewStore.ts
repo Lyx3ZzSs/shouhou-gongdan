@@ -156,7 +156,7 @@ interface ReviewStore {
   autoSaveStatus: AutoSaveStatus;
   conflict: ConflictInfo | null;
   beingEditedBy: string | null;
-  lockState: 'acquiring' | 'locked' | 'lost';  // F2: 锁丢失强阻塞
+  lockState: 'acquiring' | 'locked' | 'lost' | 'error';  // F2: 锁丢失强阻塞
   dirty: boolean;
   pendingSwitchId: string | null;
   currentLoadId: number;  // F4: 切单竞态保护
@@ -219,7 +219,7 @@ interface ReviewStore {
   locateField: (fieldId: string) => void;
   jumpToNextAnomaly: () => void;
   setAutoSaveStatus: (s: AutoSaveStatus) => void;
-  setLockState: (s: 'acquiring' | 'locked' | 'lost') => void;  // F2
+  setLockState: (s: 'acquiring' | 'locked' | 'lost' | 'error') => void;  // F2
 }
 
 const defaultFilters: QueueFilters = {
@@ -397,8 +397,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   setFieldValue: (fieldId, value, reason) => {
-    // F2: 锁丢失时禁止编辑
-    if (get().lockState === 'lost') return;
+    // F2: 锁丢失/错误时禁止编辑
+    if (get().lockState === 'lost' || get().lockState === 'error') return;
     const { ticket, fieldStates } = get();
     if (!ticket) return;
     const field = ticket.fields.find((f) => f.id === fieldId);
@@ -496,6 +496,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     set((s) => ({
       fieldStates: { ...s.fieldStates, [fieldId]: { ...s.fieldStates[fieldId], remark } },
       dirty: true,
+      autoSaveStatus: 'saving',
     })),
 
   toggleUncertain: (fieldId) =>
@@ -504,6 +505,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       return {
         fieldStates: { ...s.fieldStates, [fieldId]: { ...prev, uncertain: !prev?.uncertain } },
         dirty: true,
+        autoSaveStatus: 'saving',
       };
     }),
 
@@ -516,8 +518,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     })),
 
   stash: async () => {
-    // F2: 锁丢失时禁止暂存
-    if (get().lockState === 'lost') return;
+    // F2: 锁丢失/错误时禁止暂存
+    if (get().lockState === 'lost' || get().lockState === 'error') return;
     const { ticket, fieldStates, notes, queue, filters, selectedId } = get();
     if (!ticket) return;
 
@@ -573,9 +575,9 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   closeSubmitDialog: () => set({ submitDialogOpen: false, submitting: false }),
 
   submit: async (decision, openNext) => {
-    // F2: 锁丢失时禁止提交
-    if (get().lockState === 'lost') {
-      set({ error: '编辑锁已丢失，请刷新页面后重新审核' });
+    // F2: 锁丢失/错误时禁止提交
+    if (get().lockState === 'lost' || get().lockState === 'error') {
+      set({ error: '编辑锁已丢失或不可用，请刷新页面后重新审核' });
       return;
     }
     set({ submitting: true, error: null });
@@ -599,15 +601,29 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       detail: notes ? `备注：${notes}` : undefined,
     };
 
-    // draft → 本地暂存，不调用 API
+    // draft → 调用 stash API 持久化草稿
     if (decision === 'draft') {
-      set((s) => ({
-        auditLogs: [newAudit, ...s.auditLogs],
-        submitting: false,
-        submitDialogOpen: false,
-        dirty: false,
-        submittedToast: decisionLabel[decision],
-      }));
+      try {
+        const payload = Object.fromEntries(
+          Object.entries(fieldStates).map(([id, fs]) => [
+            id,
+            { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
+          ]),
+        );
+        await stashWorkOrder(ticket.id, payload, notes, 'manual');
+        set((s) => ({
+          auditLogs: [newAudit, ...s.auditLogs],
+          submitting: false,
+          submitDialogOpen: false,
+          dirty: false,
+          submittedToast: decisionLabel[decision],
+        }));
+      } catch {
+        set({
+          submitting: false,
+          error: '暂存失败，请重试',
+        });
+      }
       return;
     }
 

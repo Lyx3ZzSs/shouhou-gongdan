@@ -27,6 +27,12 @@ class WorkOrder(Base):
     # 'pending' | 'syncing' | 'synced' | 'failed' — 销售易同步状态
     sync_attempts = Column(Integer, nullable=False, default=0)
     sync_last_error = Column(Text, nullable=True)
+    sync_idempotency_key = Column(String(128), nullable=True)
+    # 去重键：同一次确认提交的多次同步尝试共享同一 key，防止重复创建
+    sync_external_id = Column(String(64), nullable=True)
+    # 销售易返回的工单 ID，非空时表示已在销售易创建成功（幂等检查点）
+    sync_started_at = Column(DateTime(timezone=True), nullable=True)
+    # 同步开始时间，用于判断 syncing 状态是否超时（recover_orphan_syncs）
 
     # Read-only metadata
     serial_number = Column(String(64), nullable=True)

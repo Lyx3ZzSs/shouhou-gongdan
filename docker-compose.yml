@@ -5,7 +5,8 @@
 #
 # ⚠️ 重要：部署到服务器前必须通过环境变量设置强密码
 #    export POSTGRES_PASSWORD=<强随机密码>
-#    或在 .env 文件中配置 POSTGRES_PASSWORD
+#    export REDIS_PASSWORD=<强随机密码>
+#    或在 .env 文件中配置
 
 services:
   postgres:
@@ -13,10 +14,10 @@ services:
     container_name: shouhou-gongdan-pg
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须设置 POSTGRES_PASSWORD 环境变量}
       POSTGRES_DB: shouhou_gongdan
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/schema_init.sql:/docker-entrypoint-initdb.d/01_schema_init.sql
@@ -29,10 +30,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: shouhou-gongdan-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5

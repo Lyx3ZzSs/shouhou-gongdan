@@ -27,7 +27,10 @@ _TOKEN_REFRESH_MARGIN = 300
 # ---------------------------------------------------------------------------
 
 class CreateWorkOrderRequest(BaseModel):
-    """销售易 insertServiceCase 请求体 — 33 可见字段 + defectFlag__c。"""
+    """销售易 insertServiceCase 请求体 — 33 可见字段 + defectFlag__c + idempotency_key。"""
+    # ---- Idempotency ----
+    idempotency_key: str = ""
+
     # ---- Required ----
     ownerId: str = ""
     dimDepart: str = ""
@@ -68,11 +71,20 @@ class CreateWorkOrderRequest(BaseModel):
     defectFlag__c: str = "1"
 
     def to_api_body(self) -> dict[str, Any]:
-        """转为 API JSON body，空字符串的 optional 字段会被排除。"""
+        """转为 API JSON body，空字符串的 optional 字段会被排除。
+
+        idempotency_key 以 idempotencyKey__c 自定义字段发送（__c 后缀符合
+        销售易 Salesforce 风格 API 约定）。注意：销售易是否支持此字段去重尚
+        未确认，当前属于尽力而为；真正的幂等保证来自本地原子认领机制。
+        """
         data: dict[str, Any] = {"defectFlag__c": self.defectFlag__c}
 
+        # 幂等键以自定义字段发送（尽力而为，依赖销售易端支持）
+        if self.idempotency_key:
+            data["idempotencyKey__c"] = self.idempotency_key
+
         for field_name, field_info in self.model_fields.items():
-            if field_name == "defectFlag__c":
+            if field_name in ("defectFlag__c", "idempotency_key"):
                 continue
             value = getattr(self, field_name)
             if value != "" and value is not None:
@@ -105,10 +117,10 @@ class XiaoShouYiClient:
         self._base_url = settings.XIAOSHOUYI_BASE_URL.rstrip("/") if settings.XIAOSHOUYI_BASE_URL else ""
         self._token_url = settings.XIAOSHOUYI_TOKEN_URL
         self._client_id = settings.XIAOSHOUYI_CLIENT_ID
-        self._client_secret = settings.XIAOSHOUYI_CLIENT_SECRET
+        self._client_secret = settings.XIAOSHOUYI_CLIENT_SECRET.get_secret_value()
         self._redirect_uri = settings.XIAOSHOUYI_REDIRECT_URI
         self._username = settings.XIAOSHOUYI_USERNAME
-        self._password = settings.XIAOSHOUYI_PASSWORD
+        self._password = settings.XIAOSHOUYI_PASSWORD.get_secret_value()
 
         # Token 缓存
         self._access_token: str | None = None

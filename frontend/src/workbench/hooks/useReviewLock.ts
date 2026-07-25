@@ -12,6 +12,7 @@ import { acquireLock, releaseLock, heartbeatLock } from '../../api/review';
 import { useReviewStore } from '../store/useReviewStore';
 
 const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // 2 分钟（后端锁 TTL 为 5 分钟）
+const MAX_HEARTBEAT_FAILURES = 3; // 连续失败 3 次后判定锁丢失
 
 export function useReviewLock(workorderId: string | undefined) {
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -39,9 +40,11 @@ export function useReviewLock(workorderId: string | undefined) {
           // 锁获取成功 — 启动心跳
           useReviewStore.setState({ beingEditedBy: null, lockState: 'locked' });
           clearHeartbeat();
+          let heartbeatFailures = 0;
           heartbeatTimerRef.current = setInterval(async () => {
             try {
               const result = await heartbeatLock(workorderId);
+              heartbeatFailures = 0; // 成功后重置计数
               if (result === 'lost') {
                 useReviewStore.setState({
                   beingEditedBy: '锁已丢失，请刷新页面',
@@ -50,7 +53,14 @@ export function useReviewLock(workorderId: string | undefined) {
                 clearHeartbeat();
               }
             } catch {
-              // 心跳失败，下次间隔重试
+              heartbeatFailures += 1;
+              if (heartbeatFailures >= MAX_HEARTBEAT_FAILURES) {
+                useReviewStore.setState({
+                  beingEditedBy: '心跳连接失败，锁可能已丢失',
+                  lockState: 'lost',
+                });
+                clearHeartbeat();
+              }
             }
           }, HEARTBEAT_INTERVAL);
         } else {
@@ -61,8 +71,8 @@ export function useReviewLock(workorderId: string | undefined) {
           });
         }
       } catch {
-        // 获取锁失败（如 Redis 不可用），静默降级
-        useReviewStore.setState({ beingEditedBy: null, lockState: 'locked' });
+        // 获取锁失败（如 Redis 不可用），标记为 error 阻止编辑
+        useReviewStore.setState({ beingEditedBy: '锁服务不可用', lockState: 'error' });
       }
     };
 

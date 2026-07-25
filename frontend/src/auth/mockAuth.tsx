@@ -24,6 +24,11 @@ export const mockAuthValue: AuthContextValue = {
 export const MockAuthContext = createContext<AuthContextValue>(mockAuthValue);
 
 export function MockAuthProvider({ children }: { children: ReactNode }) {
+  if (import.meta.env.PROD) {
+    throw new Error(
+      'MockAuthProvider 不应在生产环境中使用。请检查 VITE_AUTH_ENABLED 配置。',
+    );
+  }
   return (
     <MockAuthContext.Provider value={mockAuthValue}>
       {children}

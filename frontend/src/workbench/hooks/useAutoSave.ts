@@ -45,7 +45,7 @@ export function useAutoSave() {
     const t = setInterval(() => {
       if (dirtyRef.current && ticketRef.current) {
         const status = useReviewStore.getState().autoSaveStatus;
-        if (status !== 'saving' && status !== 'failed') {
+        if (status !== 'saving') {
           setAutoSaveStatus('saving');
         }
       }

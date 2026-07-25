@@ -20,7 +20,7 @@ function getToken(): string {
   return keycloak.token ?? '';
 }
 
-function authHeaders(): HeadersInit {
+function authHeaders(): Record<string, string> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) {
@@ -29,18 +29,60 @@ function authHeaders(): HeadersInit {
   return headers;
 }
 
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const doFetch = () => fetch(url, {
-    ...options,
-    headers: { ...authHeaders(), ...(options.headers as Record<string, string> || {}) },
-  });
+/** 从响应体中提取服务端返回的错误详情，失败时回退到状态码文本 */
+async function extractErrorDetail(res: Response, fallbackStatus: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body?.detail && typeof body.detail === 'string') {
+      return `${fallbackStatus}: ${body.detail}`;
+    }
+  } catch {
+    // 响应体非 JSON，回退到状态码
+  }
+  return fallbackStatus;
+}
 
-  let res = await doFetch();
+/** 合并 HeadersInit 为普通 Record，避免 as 断言导致运行时错误 */
+function mergeHeaders(initHeaders: RequestInit['headers']): Record<string, string> {
+  const merged: Record<string, string> = { ...authHeaders() };
+  if (!initHeaders) return merged;
+
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => { merged[key] = value; });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) {
+      merged[key] = value;
+    }
+  } else {
+    Object.assign(merged, initHeaders);
+  }
+  return merged;
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const doFetch = () => {
+    const headers = mergeHeaders(options.headers);
+    return fetch(url, {
+      ...options,
+      headers,
+    });
+  };
+
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (err) {
+    throw new Error(`网络请求失败: ${url} — ${(err as Error).message}`);
+  }
 
   if (res.status === 401 && authEnabled) {
     try {
       await keycloak.updateToken(30);
-      res = await doFetch();
+      try {
+        res = await doFetch();
+      } catch (err) {
+        throw new Error(`Token 刷新后请求失败: ${url} — ${(err as Error).message}`);
+      }
     } catch {
       keycloak.login({ redirectUri: window.location.origin + '/callback' });
       throw new Error('认证已过期，正在跳转登录...');
@@ -52,7 +94,7 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
 
 export async function fetchWorkOrderList(): Promise<GeneratedWorkOrderSummary[]> {
   const res = await authFetch(BASE);
-  if (!res.ok) throw new Error(`获取工单列表失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取工单列表失败: ${res.status}`));
   const data = await res.json();
   // 后端返回 PaginatedWorkOrderSummary { items, total, offset, limit }
   return data.items ?? [];
@@ -60,7 +102,7 @@ export async function fetchWorkOrderList(): Promise<GeneratedWorkOrderSummary[]>
 
 export async function fetchWorkOrder(id: string): Promise<WorkOrderData> {
   const res = await authFetch(`${BASE}/${id}`);
-  if (!res.ok) throw new Error(`获取工单失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取工单失败: ${res.status}`));
   return res.json();
 }
 
@@ -74,7 +116,7 @@ export async function submitReview(
   if (res.status === 409) {
     throw new ConflictError((await res.json()).detail);
   }
-  if (!res.ok) throw new Error(`提交审查失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `提交审查失败: ${res.status}`));
   return res.json();
 }
 
@@ -84,7 +126,7 @@ export async function acquireLock(id: string): Promise<LockStatus> {
   const res = await authFetch(`${BASE}/${id}/lock`, {
     method: 'POST',
   });
-  if (!res.ok) throw new Error(`获取锁失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取锁失败: ${res.status}`));
   return res.json();
 }
 
@@ -104,7 +146,7 @@ export async function stashWorkOrder(
     method: 'POST',
     body: JSON.stringify({ field_states: fieldStates, notes, mode }),
   });
-  if (!res.ok) throw new Error(`暂存失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `暂存失败: ${res.status}`));
 }
 
 export interface StashData {
@@ -116,7 +158,7 @@ export interface StashData {
 export async function fetchStashData(id: string): Promise<StashData | null> {
   const res = await authFetch(`${BASE}/${id}/stash`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`获取暂存数据失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取暂存数据失败: ${res.status}`));
   return res.json();
 }
 
@@ -124,7 +166,7 @@ export async function deleteStashData(id: string): Promise<void> {
   const res = await authFetch(`${BASE}/${id}/stash`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error(`删除暂存数据失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `删除暂存数据失败: ${res.status}`));
 }
 
 export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
@@ -132,7 +174,7 @@ export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
     method: 'PUT',
   });
   if (res.status === 423) return 'lost';
-  if (!res.ok) throw new Error(`心跳失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `心跳失败: ${res.status}`));
   return 'ok';
 }
 
@@ -165,12 +207,12 @@ export async function fetchConfirm(
   if (res.status === 409) {
     throw new ConflictError((await res.json()).detail);
   }
-  if (!res.ok) throw new Error(`确认提交失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `确认提交失败: ${res.status}`));
   return res.json();
 }
 
 export async function fetchAuditLogs(id: string): Promise<GeneratedAuditLogEntry[]> {
   const res = await authFetch(`${BASE}/${id}/audit-logs`);
-  if (!res.ok) throw new Error(`获取审计日志失败: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取审计日志失败: ${res.status}`));
   return res.json();
 }

@@ -41,6 +41,13 @@ async def decode_jwt(token: str) -> dict:
             detail="KEYCLOAK_JWKS_URL 未配置",
         )
 
+    # 强制要求配置签发者和受众，避免静默跳过校验
+    if not settings.KEYCLOAK_ISSUER or not settings.KEYCLOAK_AUDIENCE:
+        raise HTTPException(
+            status_code=500,
+            detail="KEYCLOAK_ISSUER 或 KEYCLOAK_AUDIENCE 未配置",
+        )
+
     try:
         client = _get_jwks_client()
         signing_key = client.get_signing_key_from_jwt(token)
@@ -53,8 +60,8 @@ async def decode_jwt(token: str) -> dict:
             token,
             key=signing_key.key,
             algorithms=["RS256"],
-            issuer=settings.KEYCLOAK_ISSUER or None,
-            audience=settings.KEYCLOAK_AUDIENCE or None,
+            issuer=settings.KEYCLOAK_ISSUER,
+            audience=settings.KEYCLOAK_AUDIENCE,
             options={
                 "verify_signature": True,
                 "verify_exp": True,

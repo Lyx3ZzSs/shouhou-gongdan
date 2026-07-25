@@ -116,6 +116,14 @@ export function VersionConflictDialog() {
               <GitCompareArrows className="h-4 w-4" />
               {showDiff ? '收起差异' : '查看双方差异'}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-muted-foreground"
+              onClick={() => window.location.reload()}
+            >
+              刷新页面
+            </Button>
           </div>
         </div>
       </DialogContent>

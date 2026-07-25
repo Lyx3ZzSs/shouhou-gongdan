@@ -89,14 +89,14 @@ export function StickyDecisionBar() {
 
         {/* 右侧：审核结论 */}
         <div className="flex items-center gap-1.5">
-          {/* F2: 锁丢失提示 */}
-          {lockState === 'lost' && (
+          {/* F2: 锁丢失/错误提示 */}
+          {(lockState === 'lost' || lockState === 'error') && (
             <button
               onClick={() => window.location.reload()}
               className="inline-flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive"
             >
               <ShieldAlert className="h-3.5 w-3.5" />
-              编辑锁已丢失，点击刷新页面
+              {lockState === 'error' ? '锁服务不可用，点击刷新页面' : '编辑锁已丢失，点击刷新页面'}
             </button>
           )}
           {blockingHint && (

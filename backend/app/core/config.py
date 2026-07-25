@@ -1,5 +1,6 @@
 import os
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,10 +25,10 @@ class Settings(BaseSettings):
     XIAOSHOUYI_TOKEN_URL: str = "https://login.xiaoshouyi.com/auc/oauth2/token"
     XIAOSHOUYI_BASE_URL: str = ""
     XIAOSHOUYI_CLIENT_ID: str = ""
-    XIAOSHOUYI_CLIENT_SECRET: str = ""
+    XIAOSHOUYI_CLIENT_SECRET: SecretStr = SecretStr("")
     XIAOSHOUYI_REDIRECT_URI: str = "https://api-tencent.xiaoshouyi.com"
     XIAOSHOUYI_USERNAME: str = ""
-    XIAOSHOUYI_PASSWORD: str = ""
+    XIAOSHOUYI_PASSWORD: SecretStr = SecretStr("")
     XIAOSHOUYI_SYNC_MAX_RETRIES: int = 3
     XIAOSHOUYI_SYNC_TIMEOUT_SECONDS: float = 5.0
 

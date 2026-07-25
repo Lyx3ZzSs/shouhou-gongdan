@@ -101,6 +101,13 @@ export function KeycloakProvider({ children }: Props) {
       .catch((err) => {
         console.error('Keycloak init failed:', err);
       });
+
+    return () => {
+      if (refreshTimer.current) {
+        clearInterval(refreshTimer.current);
+        refreshTimer.current = undefined;
+      }
+    };
   }, [startTokenRefresh]);
 
   const login = useCallback(() => {

@@ -33,21 +33,60 @@ async def background_sync_to_xiaoshouyi(
     sync_idempotency_key: str,
     session_factory: async_sessionmaker,
 ) -> str:
-    """后台同步至销售易（非阻塞，带指数退避重试）。
+    """后台同步至销售易（非阻塞，带指数退避重试 + 原子认领 + 幂等保护）。
 
     由 FastAPI BackgroundTasks 调度执行。使用独立的 DB session，
     从数据库读取工单最新数据后调用销售易 insertServiceCase 接口。
+
+    幂等性保证（三层防御）：
+    1. 原子认领：UPDATE WHERE sync_external_id IS NULL — 已有 external_id 则跳过
+    2. 请求级幂等：sync_idempotency_key 以 requestId 发送给销售易
+    3. 成功后持久化 external_id：后续所有重试/恢复直接跳过
     """
     max_retries = settings.XIAOSHOUYI_SYNC_MAX_RETRIES
     timeout = settings.XIAOSHOUYI_SYNC_TIMEOUT_SECONDS
     if max_retries < 1:
         logger.warning("销售易同步已禁用（XIAOSHOUYI_SYNC_MAX_RETRIES=%d），workorder=%s", max_retries, workorder_id)
         return 'pending'
+
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
+            # ---- 原子认领（租约模式）：只有 external_id 为空且未被其他任务持有时才允许 ----
             async with session_factory() as db:
-                # 读取工单最新数据
+                claim_result = await db.execute(
+                    text("""
+                        UPDATE workorder
+                        SET sync_status = 'syncing',
+                            sync_attempts = :attempt,
+                            sync_idempotency_key = :key,
+                            sync_started_at = NOW()
+                        WHERE id = :id
+                          AND sync_external_id IS NULL
+                          AND (sync_status != 'syncing' OR sync_idempotency_key = :key)
+                    """),
+                    {"id": workorder_id, "attempt": attempt, "key": sync_idempotency_key},
+                )
+                if claim_result.rowcount == 0:
+                    # 认领失败 — 检查是否已被其他进程同步
+                    check = await db.execute(
+                        text("SELECT sync_external_id FROM workorder WHERE id = :id"),
+                        {"id": workorder_id},
+                    )
+                    ext_row = check.mappings().first()
+                    if ext_row and ext_row.get("sync_external_id"):
+                        logger.info(
+                            "原子认领跳过（已有 external_id）workorder=%s ext=%s",
+                            workorder_id, ext_row["sync_external_id"],
+                        )
+                        return 'synced'
+                    # 工单可能已被删除
+                    logger.warning("原子认领失败但 external_id 为空 workorder=%s", workorder_id)
+                    return 'failed'
+                await db.commit()
+
+            # ---- 读取工单数据（新事务，避免长事务） ----
+            async with session_factory() as db:
                 result = await db.execute(
                     text("SELECT * FROM workorder WHERE id = :id"),
                     {"id": workorder_id},
@@ -57,8 +96,9 @@ async def background_sync_to_xiaoshouyi(
                     logger.error("销售易同步失败: 工单 %s 不存在", workorder_id)
                     return 'failed'
 
-                # 构建销售易 API 请求体
+                # 构建销售易 API 请求体（传入幂等键）
                 req = CreateWorkOrderRequest(
+                    idempotency_key=sync_idempotency_key,
                     ownerId=row.get("ownerId") or "",
                     dimDepart=row.get("dimDepart") or "",
                     entityType=row.get("entityType") or "11010045500001",
@@ -96,32 +136,24 @@ async def background_sync_to_xiaoshouyi(
                     defectFlag__c=row.get("defectFlag__c") or "1",
                 )
 
-                # 更新尝试计数
-                if attempt == 1:
-                    await db.execute(
-                        update(WorkOrder)
-                        .where(WorkOrder.id == workorder_id)
-                        .values(sync_status='syncing', sync_attempts=attempt),
-                    )
-                else:
-                    await db.execute(
-                        update(WorkOrder)
-                        .where(WorkOrder.id == workorder_id)
-                        .values(sync_attempts=attempt),
-                    )
-                await db.commit()
+            # ---- 调用销售易 API ----
+            client = get_xiaoshouyi_client()
+            sync_result = await asyncio.wait_for(
+                client.create_work_order(req),
+                timeout=timeout,
+            )
 
-                client = get_xiaoshouyi_client()
-                sync_result = await asyncio.wait_for(
-                    client.create_work_order(req),
-                    timeout=timeout,
-                )
-
+            # ---- 写入同步结果 ----
+            async with session_factory() as db:
                 if sync_result.external_id:
                     await db.execute(
                         update(WorkOrder)
                         .where(WorkOrder.id == workorder_id)
-                        .values(sync_status='synced', sync_attempts=attempt),
+                        .values(
+                            sync_status='synced',
+                            sync_attempts=attempt,
+                            sync_external_id=sync_result.external_id,
+                        ),
                     )
                     await db.commit()
                     logger.info("销售易同步成功 workorder=%s external_id=%s attempt=%d", workorder_id, sync_result.external_id, attempt)
@@ -136,7 +168,6 @@ async def background_sync_to_xiaoshouyi(
                     logger.info("销售易客户端未实现或未配置，workorder=%s", workorder_id)
                     return 'pending'
         except asyncio.CancelledError:
-            # 服务关闭时的取消信号 — 尝试将状态重置为 pending 以避免孤儿记录
             logger.info("销售易同步被取消 workorder=%s attempt=%d", workorder_id, attempt)
             try:
                 async with session_factory() as db:
@@ -188,6 +219,82 @@ async def background_sync_to_xiaoshouyi(
             except Exception:
                 logger.warning("销售易同步取消后状态重置失败 workorder=%s", workorder_id, exc_info=True)
             raise
+
+
+async def recover_orphan_syncs(
+    session_factory: async_sessionmaker,
+    schedule_fn,
+) -> int:
+    """启动时恢复孤儿同步记录（原子认领 + 循环分批，多实例安全）。
+
+    - 恢复 status='confirmed'（审核已通过）的工单
+    - 恢复 sync_status='pending' 的记录 + 卡死在 'syncing' 超 30 分钟的记录
+    - FOR UPDATE SKIP LOCKED 确保每条记录只被一个实例认领
+    - sync_attempts < max_retries 确保已耗尽重试的不再恢复
+    - 循环分批领取（每批 LIMIT 50）直到队列为空
+
+    返回恢复的记录数。
+    """
+    max_retries = settings.XIAOSHOUYI_SYNC_MAX_RETRIES
+    if max_retries < 1:
+        return 0
+
+    SQL_CLAIM = text("""
+        UPDATE workorder SET sync_status = 'syncing',
+               sync_started_at = NOW(),
+               sync_idempotency_key = COALESCE(sync_idempotency_key, 'recover-' || id)
+        WHERE id IN (
+            SELECT id FROM workorder
+            WHERE (
+                sync_status = 'pending'
+                OR (
+                    sync_status = 'syncing'
+                    AND sync_started_at IS NOT NULL
+                    AND sync_started_at < NOW() - INTERVAL '30 minutes'
+                )
+            )
+              AND status = 'confirmed'
+              AND sync_external_id IS NULL
+              AND sync_attempts < :max_retries
+            ORDER BY reviewed_at ASC
+            LIMIT 50
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, sync_idempotency_key
+    """)
+
+    recovered = 0
+    while True:
+        try:
+            async with session_factory() as db:
+                result = await db.execute(SQL_CLAIM, {"max_retries": max_retries})
+                batch = result.mappings().all()
+                await db.commit()
+        except Exception:
+            logger.exception("孤儿同步记录查询失败")
+            break
+
+        if not batch:
+            break
+
+        for row in batch:
+            wid = row["id"]
+            idempotency_key = row.get("sync_idempotency_key") or f"recover-{wid}"
+            try:
+                schedule_fn(
+                    background_sync_to_xiaoshouyi,
+                    wid,
+                    idempotency_key,
+                    session_factory,
+                )
+                recovered += 1
+                logger.info("孤儿同步记录已恢复 workorder=%s key=%s", wid, idempotency_key)
+            except Exception:
+                logger.exception("孤儿同步记录恢复失败 workorder=%s", wid)
+
+    if recovered > 0:
+        logger.info("孤儿同步记录恢复完成: %d 条", recovered)
+    return recovered
 
 
 class ReviewService:
