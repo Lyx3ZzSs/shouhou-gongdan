@@ -287,19 +287,36 @@ async def retry_sync(
     current_user: CurrentUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """手动重试指定工单的销售易同步。"""
-    # 验证工单存在且确实同步失败
+    """手动重试指定工单的销售易同步。
+
+    支持 failed / pending 状态的工单重试。已存在 sync_external_id
+    的记录（幂等已完成）将被直接标记为 synced 而不重复调用 API。
+    """
     result = await db.execute(
         select(WorkOrder).where(WorkOrder.id == workorder_id)
     )
     wo = result.scalar_one_or_none()
     if wo is None:
         raise HTTPException(status_code=404, detail="工单不存在")
-    if wo.sync_status != 'failed':
-        raise HTTPException(status_code=400, detail=f"工单同步状态为 '{wo.sync_status}'，只有 'failed' 状态可以重试")
 
-    # 生成重试幂等键
-    idempotency_key = f"retry-{workorder_id}-{uuid.uuid4().hex[:8]}"
+    if wo.sync_status not in ('failed', 'pending'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"工单同步状态为 '{wo.sync_status}'，只有 'failed' 或 'pending' 状态可以重试",
+        )
+
+    # 如果已有 external_id，直接标记为 synced（幂等已完成）
+    if wo.sync_external_id:
+        await db.execute(
+            sa_update(WorkOrder)
+            .where(WorkOrder.id == workorder_id)
+            .values(sync_status='synced'),
+        )
+        await db.commit()
+        return {"status": "synced", "workorder_id": workorder_id, "note": "已有 external_id，已标记为 synced"}
+
+    # 使用已有的幂等键或生成新的重试键
+    idempotency_key = wo.sync_idempotency_key or f"retry-{workorder_id}-{uuid.uuid4().hex[:8]}"
 
     # 后台重试
     background_tasks.add_task(

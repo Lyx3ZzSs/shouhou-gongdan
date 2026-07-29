@@ -9,6 +9,9 @@ __pycache__/
 *.py[cod]
 *.db
 
+# Backend environment (contains secrets)
+backend/.env
+
 # Node / Frontend
 node_modules/
 dist/

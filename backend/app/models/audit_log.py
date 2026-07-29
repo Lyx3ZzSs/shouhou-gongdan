@@ -17,8 +17,8 @@ class WorkOrderAuditLog(Base):
     change_type = Column(String(16), nullable=False, default="replace")
     operator_id = Column(String(64), nullable=False)
     operator_name = Column(String(64), nullable=True)
-    # PostgreSQL TIMESTAMP is sufficient for development and production use.
-    operated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    # PostgreSQL TIMESTAMPTZ for proper timezone handling with asyncpg.
+    operated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("idx_workorder", "workorder_id"),

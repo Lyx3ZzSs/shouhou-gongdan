@@ -60,6 +60,7 @@ NEW_COLUMNS: list[tuple[str, type[sa.types.TypeEngine], str | None]] = [
     ('isHandled__c', sa.String(4), None),
     ('needOnSite__c', sa.String(4), None),
     ('remark__c', sa.Text(), None),
+    ('relatedAttachment__c', sa.String(255), None),
     ('planFeedbackTime__c', sa.String(32), None),
     ('requireSolveTime__c', sa.String(32), None),
     # Hidden

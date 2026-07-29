@@ -20,48 +20,53 @@ STATEMENTS = [
         last_reject_reason  TEXT        NULL,
         last_rejected_by    VARCHAR(64) NULL,
         last_rejected_at    TIMESTAMP   NULL,
+        review_notes    TEXT            NULL,
         sync_status     VARCHAR(16)     NOT NULL DEFAULT 'pending',
+        sync_attempts   INTEGER         NOT NULL DEFAULT 0,
+        sync_last_error TEXT            NULL,
+        sync_idempotency_key VARCHAR(128) NULL,
+        sync_external_id VARCHAR(64)    NULL,
         serial_number           VARCHAR(64)     NULL,
         status                  VARCHAR(32)     NULL,
         created_at              TIMESTAMP       NULL,
         initiator               VARCHAR(64)     NULL,
         initiator_department    VARCHAR(128)    NULL,
-        -- 销售易 serviceCase API 业务字段
-        ownerId                 VARCHAR(64)     NULL,
-        dimDepart               VARCHAR(128)    NULL,
-        entityType              VARCHAR(32)     NULL DEFAULT '11010045500001',
+        -- 销售易 serviceCase API 业务字段（含大写字母的列名必须加双引号）
+        "ownerId"               VARCHAR(64)     NULL,
+        "dimDepart"             VARCHAR(128)    NULL,
+        "entityType"            VARCHAR(32)     NULL DEFAULT '11010045500001',
         name                    VARCHAR(255)    NULL,
-        caseSource              VARCHAR(32)     NULL,
-        feedbackChannel__c      VARCHAR(32)     NULL,
-        workOrderStatus__c      VARCHAR(32)     NULL,
-        caseDescription         TEXT            NULL,
-        caseStatus              VARCHAR(16)     NULL,
-        caseAccountId           VARCHAR(64)     NULL,
-        custLevel1__c           VARCHAR(32)     NULL,
-        projectName__c          VARCHAR(255)    NULL,
-        projectProvince__c      VARCHAR(64)     NULL,
-        bigCustShortName__c     VARCHAR(128)    NULL,
-        serviceCycleStart__c    VARCHAR(32)     NULL,
-        serviceCycleEnd__c      VARCHAR(32)     NULL,
-        isOfflineApply__c       VARCHAR(4)      NULL,
-        isOverdueService__c     VARCHAR(4)      NULL,
-        problemLevel__c         VARCHAR(32)     NULL,
-        problemType1__c         VARCHAR(32)     NULL,
-        problemType2__c         VARCHAR(64)     NULL,
-        problemType3__c         VARCHAR(64)     NULL,
-        feedbackCount__c        VARCHAR(16)     NULL,
-        problemResponsible__c   VARCHAR(64)     NULL,
-        problemDept__c          VARCHAR(128)    NULL,
-        feedbackUserName__c     VARCHAR(64)     NULL,
-        feedbackUserContact__c  VARCHAR(16)     NULL,
-        needCallBack__c         VARCHAR(4)      NULL,
-        isHandled__c            VARCHAR(4)      NULL,
-        needOnSite__c           VARCHAR(4)      NULL,
+        "caseSource"            VARCHAR(32)     NULL,
+        "feedbackChannel__c"    VARCHAR(32)     NULL,
+        "workOrderStatus__c"    VARCHAR(32)     NULL,
+        "caseDescription"       TEXT            NULL,
+        "caseStatus"            VARCHAR(16)     NULL,
+        "caseAccountId"         VARCHAR(64)     NULL,
+        "custLevel1__c"         VARCHAR(32)     NULL,
+        "projectName__c"        VARCHAR(255)    NULL,
+        "projectProvince__c"    VARCHAR(64)     NULL,
+        "bigCustShortName__c"   VARCHAR(128)    NULL,
+        "serviceCycleStart__c"  VARCHAR(32)     NULL,
+        "serviceCycleEnd__c"    VARCHAR(32)     NULL,
+        "isOfflineApply__c"     VARCHAR(4)      NULL,
+        "isOverdueService__c"   VARCHAR(4)      NULL,
+        "problemLevel__c"       VARCHAR(32)     NULL,
+        "problemType1__c"       VARCHAR(32)     NULL,
+        "problemType2__c"       VARCHAR(64)     NULL,
+        "problemType3__c"       VARCHAR(64)     NULL,
+        "feedbackCount__c"      VARCHAR(16)     NULL,
+        "problemResponsible__c" VARCHAR(64)     NULL,
+        "problemDept__c"        VARCHAR(128)    NULL,
+        "feedbackUserName__c"   VARCHAR(64)     NULL,
+        "feedbackUserContact__c" VARCHAR(16)    NULL,
+        "needCallBack__c"       VARCHAR(4)      NULL,
+        "isHandled__c"          VARCHAR(4)      NULL,
+        "needOnSite__c"         VARCHAR(4)      NULL,
         remark__c               TEXT            NULL,
-        relatedAttachment__c    VARCHAR(255)    NULL,
-        planFeedbackTime__c     VARCHAR(32)     NULL,
-        requireSolveTime__c     VARCHAR(32)     NULL,
-        defectFlag__c           VARCHAR(4)      NULL DEFAULT '1'
+        "relatedAttachment__c"  VARCHAR(255)    NULL,
+        "planFeedbackTime__c"   VARCHAR(32)     NULL,
+        "requireSolveTime__c"   VARCHAR(32)     NULL,
+        "defectFlag__c"         VARCHAR(4)      NULL DEFAULT '1'
     )
     """,
     # 2. workorder_audit_log 审计日志表
@@ -77,7 +82,7 @@ STATEMENTS = [
         change_type     VARCHAR(16)     NOT NULL DEFAULT 'replace',
         operator_id     VARCHAR(64)     NOT NULL,
         operator_name   VARCHAR(64)     NULL,
-        operated_at     TIMESTAMP       NOT NULL DEFAULT NOW()
+        operated_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW()
     )
     """,
     """
@@ -103,7 +108,7 @@ STATEMENTS = [
         human_value     TEXT            NULL,
         sample_status   VARCHAR(16)     NOT NULL DEFAULT 'pending',
         source          VARCHAR(16)     NOT NULL DEFAULT 'review_correction',
-        created_at      TIMESTAMP       NOT NULL DEFAULT NOW()
+        created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
     )
     """,
     """
@@ -111,6 +116,21 @@ STATEMENTS = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_workorder ON bad_case_sample (workorder_id)
+    """,
+    # 4. workorder_stash 暂存表（审核进度草稿保存）
+    """
+    CREATE TABLE IF NOT EXISTS workorder_stash (
+        id              BIGSERIAL       PRIMARY KEY,
+        workorder_id    VARCHAR(64)     NOT NULL,
+        field_states    JSONB           NOT NULL DEFAULT '{}'::jsonb,
+        notes           TEXT            NULL DEFAULT '',
+        created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_workorder_stash_workorder_id UNIQUE (workorder_id)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_workorder_stash_workorder_id ON workorder_stash (workorder_id)
     """,
 ]
 
@@ -123,7 +143,7 @@ async def main():
             print(f"→ {stmt.strip().splitlines()[0].strip()}")
             await conn.execute(sa_text(stmt))
 
-    print("\n✅ 3 张表 + 6 个索引创建完成")
+    print("\n✅ 4 张表 + 7 个索引创建完成")
     print("下一步: alembic stamp head")
     await engine.dispose()
 

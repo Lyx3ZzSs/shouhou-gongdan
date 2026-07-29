@@ -13,8 +13,8 @@ def _coerce_datetime_to_iso(v: datetime | str | None) -> str | None:
 
 from app.core.field_config import load_field_config
 
-# ALLOWED_FIELDS 从 field_config.yaml 自动生成，无需手动维护
-ALLOWED_FIELDS: set[str] = load_field_config().allowed_keys
+# ALLOWED_FIELDS 从 field_config.yaml 自动生成，排除只读/系统/隐藏字段
+ALLOWED_FIELDS: set[str] = load_field_config().editable_keys
 
 MAX_TEXT_FIELD_LENGTH = 5000
 

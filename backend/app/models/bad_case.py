@@ -15,8 +15,8 @@ class BadCaseSample(Base):
     human_value = Column(Text, nullable=True)
     sample_status = Column(String(16), nullable=False, default="pending")
     source = Column(String(16), nullable=False, default="review_correction")
-    # PostgreSQL TIMESTAMP is sufficient for development and production use.
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    # PostgreSQL TIMESTAMPTZ for proper timezone handling with asyncpg.
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("idx_status", "sample_status"),

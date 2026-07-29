@@ -53,6 +53,26 @@ class FieldConfig:
         return {f.key for f in self.fields}
 
     @property
+    def editable_keys(self) -> set[str]:
+        """返回用户可编辑的字段 key 集合。
+
+        排除规则：
+        - readonly=True 的字段（version、status、serial_number 等）
+        - ui_visible=False 的隐藏字段（defectFlag__c）
+        - 审核系统元数据字段（不在 field_config.yaml 中但存在于 workorder 表）
+        """
+        _SYSTEM_FIELDS = {
+            'reviewed_at', 'reviewed_by',
+            'sync_status', 'sync_attempts', 'sync_last_error',
+            'review_notes',
+            'initiator', 'initiator_department',
+        }
+        return {
+            f.key for f in self.fields
+            if not f.readonly and f.ui_visible and f.key not in _SYSTEM_FIELDS
+        }
+
+    @property
     def visible_keys(self) -> set[str]:
         """返回 UI 可见字段的 key 集合。"""
         return {f.key for f in self.fields if f.ui_visible}
