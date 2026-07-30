@@ -31,7 +31,7 @@ export function VersionConflictDialog() {
             数据版本冲突
           </DialogTitle>
           <DialogDescription>
-            该工单已被 <span className="font-medium text-foreground">{conflict.otherUser}</span> 更新至版本 v{conflict.theirVersion}，请选择如何处理。
+            该工单已被 <span className="font-semibold text-warning">{conflict.otherUser}</span> 更新至版本 v{conflict.theirVersion}，请选择如何处理。
           </DialogDescription>
         </DialogHeader>
 
@@ -42,7 +42,7 @@ export function VersionConflictDialog() {
             {conflict.theirChanges.map((c, i) => {
               const field = ticket?.fields.find((f) => f.name === c.fieldName);
               return (
-                <li key={i} className="flex flex-col gap-0.5">
+                <li key={i} className="flex flex-col gap-0.5 rounded-lg bg-card/40 border border-warning/20 p-2">
                   <span className="text-xs text-muted-foreground">{c.fieldName}</span>
                   <FieldDiff before={c.before} after={c.after} field={field} />
                 </li>
@@ -57,7 +57,7 @@ export function VersionConflictDialog() {
             <section>
               <div className="mb-1.5 text-sm font-medium">双方差异对比：</div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-md border border-border p-2">
+                <div className="rounded-xl border border-border/30 bg-card/60 backdrop-blur-sm p-3 border-l-2 border-l-primary/40">
                   <div className="mb-1 flex items-center gap-1 text-xs font-medium text-primary">
                     <Badge variant="default" className="text-[10px]">我</Badge>
                     我的修改（{myChanges.length}）
@@ -75,7 +75,7 @@ export function VersionConflictDialog() {
                     )}
                   </ul>
                 </div>
-                <div className="rounded-md border border-border p-2">
+                <div className="rounded-xl border border-border/30 bg-card/60 backdrop-blur-sm p-3 border-l-2 border-l-warning/40">
                   <div className="mb-1 flex items-center gap-1 text-xs font-medium text-warning">
                     <Badge variant="warning" className="text-[10px]">他</Badge>
                     {conflict.otherUser} 的修改
@@ -95,14 +95,14 @@ export function VersionConflictDialog() {
         )}
 
         <div className="flex flex-col gap-2">
-          <Button onClick={() => resolveConflict('merge')} className="gap-1.5">
+          <Button onClick={() => resolveConflict('merge')} className="gap-1.5 rounded-xl">
             <RefreshCw className="h-4 w-4" />
             使用最新版本并合并（保留我的修改）
           </Button>
           <div className="flex gap-2">
             <Button
               variant="outline"
-              className="flex-1 gap-1.5 text-destructive"
+              className="flex-1 gap-1.5 text-destructive border-destructive/20 hover:bg-destructive/8 rounded-xl"
               onClick={() => resolveConflict('discard')}
             >
               <Trash2 className="h-4 w-4" />
@@ -110,7 +110,7 @@ export function VersionConflictDialog() {
             </Button>
             <Button
               variant="outline"
-              className="flex-1 gap-1.5"
+              className="flex-1 gap-1.5 rounded-xl"
               onClick={() => setShowDiff((v) => !v)}
             >
               <GitCompareArrows className="h-4 w-4" />
@@ -119,7 +119,7 @@ export function VersionConflictDialog() {
             <Button
               variant="ghost"
               size="sm"
-              className="gap-1 text-muted-foreground"
+              className="gap-1 text-muted-foreground rounded-xl"
               onClick={() => window.location.reload()}
             >
               刷新页面

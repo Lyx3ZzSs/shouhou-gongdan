@@ -1,3 +1,4 @@
+import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, Check, CloudOff, CloudUpload, Loader2, type LucideIcon } from 'lucide-react';
 import type { AutoSaveStatus } from '../../types';
 import { cn } from '@/lib/utils';
@@ -17,17 +18,26 @@ export function AutoSaveIndicator({
   status: AutoSaveStatus;
   className?: string;
 }) {
-  if (status === 'idle') return null;
   const m = META[status];
   const Icon = m.icon;
+
   return (
-    <span
-      className={cn('inline-flex items-center gap-1 text-xs', m.cls, className)}
-      role="status"
-      aria-live="polite"
-    >
-      <Icon className={cn('h-3.5 w-3.5', m.spin && 'animate-spin')} />
-      {m.label}
-    </span>
+    <AnimatePresence mode="wait">
+      {status !== 'idle' && (
+        <motion.span
+          key={status}
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 8 }}
+          transition={{ duration: 0.2 }}
+          className={cn('inline-flex items-center gap-1 text-xs', m.cls, className)}
+          role="status"
+          aria-live="polite"
+        >
+          <Icon className={cn('h-3.5 w-3.5', m.spin && 'animate-spin')} />
+          {m.label}
+        </motion.span>
+      )}
+    </AnimatePresence>
   );
 }

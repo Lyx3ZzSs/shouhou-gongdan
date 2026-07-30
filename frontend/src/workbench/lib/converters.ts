@@ -20,7 +20,6 @@ import type {
   GeneratedAuditLogEntry,
 } from '../../api/review';
 import type { FieldChange } from '../../types/review';
-import { nowIso } from './format';
 
 // ---------------------------------------------------------------------------
 // 1. 字段映射配置
@@ -333,7 +332,7 @@ export function workOrderSummaryToQueueItem(
     status,
     anomalyCount: 0,
     slaRemainingMin: 480,
-    createdAt: summary.created_at ?? nowIso(),
+    createdAt: summary.created_at ?? new Date().toISOString(),
     urgency: 'medium',
   };
 }
@@ -371,7 +370,7 @@ export function workOrderDataToReviewTicket(
     urgency: deriveUrgency((dataRec.problemLevel__c as string) ?? null),
     source: (dataRec.caseSource as string) ?? '',
     status: normalizeStatus((dataRec.review_status as string) ?? null) as ReviewTicket['status'],
-    createdAt: data.created_at ?? nowIso(),
+    createdAt: data.created_at ?? new Date().toISOString(),
     slaRemainingMin: computeSlaMinutes((dataRec.requireSolveTime__c as string) ?? null),
     reviewer: '',
     version: data.version,

@@ -58,6 +58,3 @@ export function slaStatus(
   return { label: `剩余 ${remainingMin} 分钟`, tone: 'normal' };
 }
 
-export function nowIso(): string {
-  return new Date().toISOString();
-}

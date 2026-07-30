@@ -96,17 +96,17 @@ export function FieldGridItem({
       id={`field-${field.id}`}
       ref={ref}
       className={cn(
-        'group relative rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        !isReadonly && 'cursor-text',
+        'group relative rounded-lg transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+        !isReadonly && 'cursor-text hover:bg-accent/10',
         colClass,
         isCompact ? 'px-2 py-1' : 'px-3 py-1.5',
-        flash && 'locate-flash',
-        isBlocking && 'border border-destructive/40 bg-destructive/[0.04]',
+        flash && 'locate-flash ring-2 ring-primary/20',
+        isBlocking && 'border border-destructive/30 ring-1 ring-destructive/15 bg-destructive/[0.04] animate-pulse-soft',
         isWarning &&
           !isBlocking &&
-          'border border-warning/40 bg-warning/[0.04]',
-        isEditing && 'bg-primary/[0.04]',
-        isModified && 'bg-primary/[0.03]',
+          'border border-warning/30 ring-1 ring-warning/15 bg-warning/[0.04]',
+        isEditing && 'bg-primary/[0.06] ring-1 ring-primary/20 rounded-xl',
+        isModified && 'bg-primary/[0.03] border-l-2 border-primary/30',
       )}
       onDoubleClick={() => {
         if (!isReadonly && !isEditing) setEditingField(field.id);
@@ -125,7 +125,7 @@ export function FieldGridItem({
         {/* 字段名 */}
         <span
           className={cn(
-            'shrink-0 text-xs font-medium',
+            'shrink-0 text-xs font-medium tracking-wide',
             isCompact ? 'w-20' : 'w-24',
             isBlocking
               ? 'text-destructive'
@@ -139,14 +139,14 @@ export function FieldGridItem({
 
         {/* 必填标记 */}
         {field.required && (
-          <span className="shrink-0 text-xs text-destructive">*</span>
+          <span className="shrink-0 text-xs text-destructive animate-pulse-soft">●</span>
         )}
 
         {/* 关键字段图标 */}
         {field.isKey && (
           <Tooltip>
               <TooltipTrigger asChild>
-                <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <KeyRound className="h-3 w-3 shrink-0 text-primary/60" />
               </TooltipTrigger>
               <TooltipContent>关键字段</TooltipContent>
             </Tooltip>
@@ -188,7 +188,7 @@ export function FieldGridItem({
                   {originalDisplay}
                 </span>
                 <span className="mx-1 text-muted-foreground">→</span>
-                <span className="rounded-sm bg-primary/10 px-1 font-medium text-foreground">
+                <span className="rounded-sm bg-primary/10 px-1 font-medium text-primary">
                   {currentDisplay}
                 </span>
               </span>

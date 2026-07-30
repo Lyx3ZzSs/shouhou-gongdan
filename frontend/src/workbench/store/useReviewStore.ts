@@ -21,7 +21,7 @@ import type {
 import {
   DEFAULT_SAVED_VIEWS,
 } from '../lib/constants';
-import { nowIso, valuesEqual } from '../lib/format';
+import { valuesEqual } from '../lib/format';
 import { CONFLICT_DEMO } from '../mock/mockData';
 import {
   fetchWorkOrderList,
@@ -406,7 +406,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const prev = fieldStates[fieldId];
     const reverted = valuesEqual(value, field.originalValue);
     const nextStatus: FieldReviewStatus = reverted ? prev.baselineStatus : 'modified';
-    const ts = nowIso();
+    const ts = new Date().toISOString();
     set((s) => ({
       fieldStates: {
         ...s.fieldStates,
@@ -454,7 +454,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const field = ticket.fields.find((f) => f.id === fieldId);
     if (!field) return;
     const prev = fieldStates[fieldId];
-    const ts = nowIso();
+    const ts = new Date().toISOString();
     set((s) => ({
       fieldStates: {
         ...s.fieldStates,
@@ -548,7 +548,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         auditLogs: [
           {
             id: uid('al'),
-            timestamp: nowIso(),
+            timestamp: new Date().toISOString(),
             category: 'process',
             actor: '张三',
             action: '暂存审核进度',
@@ -591,7 +591,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       draft: '暂存',
     };
 
-    const ts = nowIso();
+    const ts = new Date().toISOString();
     const newAudit = {
       id: uid('al'),
       timestamp: ts,
@@ -784,7 +784,7 @@ export function computeEffectiveChanges(
         before: f.originalValue,
         after: fs.currentValue,
         reason: fs.changeReason ?? 'other',
-        changedAt: fs.changedAt ?? nowIso(),
+        changedAt: fs.changedAt ?? new Date().toISOString(),
         kind: changeLog.find((c) => c.fieldId === f.id)?.kind ?? 'modify',
         group: f.group,
       });

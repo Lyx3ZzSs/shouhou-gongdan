@@ -6,7 +6,6 @@ import { SLACountdown } from '@/workbench/components/primitives/SLACountdown';
 import { formatDateTime } from '@/workbench/lib/format';
 import type { QueueItem, QueueItemStatus } from '@/workbench/types';
 
-// 队列状态 -> 中文标签
 const STATUS_LABEL: Record<QueueItemStatus, string> = {
   pending_review: '待审核',
   reviewing: '审核中',
@@ -14,7 +13,6 @@ const STATUS_LABEL: Record<QueueItemStatus, string> = {
   stashed: '已暂存',
 };
 
-// 队列状态 -> Badge 语义色
 const STATUS_VARIANT: Record<
   QueueItemStatus,
   'muted' | 'default' | 'warning' | 'secondary'
@@ -50,16 +48,14 @@ export function TicketListItem({ item, selected, onSelect }: TicketListItemProps
       title={`${item.serialNumber} ${item.title}`}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'relative min-h-[60px] px-3 py-2 border-b border-border cursor-pointer transition-colors outline-none',
-        'hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-        selected && 'bg-primary/5',
+        'relative min-h-[60px] mx-1 my-0.5 px-3 py-2 rounded-xl cursor-pointer transition-all duration-200 outline-none',
+        'hover:bg-accent/40 hover:shadow-sm',
+        'focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/50',
+        selected
+          ? 'bg-primary/[0.06] ring-1 ring-primary/20 shadow-sm border-l-2 border-primary'
+          : 'border border-transparent',
       )}
     >
-      {/* 选中态左侧高亮条 */}
-      {selected && (
-        <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary" aria-hidden />
-      )}
-
       {/* 行1：编号 + 状态 */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">
@@ -85,7 +81,7 @@ export function TicketListItem({ item, selected, onSelect }: TicketListItemProps
         <span className="ml-auto tabular-nums">{formatDateTime(item.createdAt)}</span>
       </div>
 
-      {/* 行4：状态指示器（仅有相关标记时展示） */}
+      {/* 行4：状态指示器 */}
       {showIndicators && (
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
           {item.lockedByOther && (

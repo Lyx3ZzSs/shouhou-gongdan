@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
@@ -58,19 +57,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             raise
 
 
-# ---- Background Task Helpers ----
-
-
-def _track_task(
-    task_set: set[asyncio.Task],
-    task: asyncio.Task,
-    on_done: Callable[[asyncio.Task], None],
-) -> None:
-    """保存 Task 引用并注册完成回调，防止异步异常丢失。"""
-    task_set.add(task)
-    task.add_done_callback(on_done)
-
-
 # ---- Lifecycle (startup recovery + graceful shutdown) ----
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -89,11 +75,10 @@ async def lifespan(application: FastAPI):
     # 启动：恢复崩溃后遗留的 pending/syncing 记录
     count = await recover_orphan_syncs(
         async_session,
-        lambda fn, wid, key, sf: _track_task(
-            background_tasks,
-            asyncio.create_task(fn(wid, key, sf)),
-            _on_task_done,
-        ),
+        lambda fn, wid, key, sf: (
+            background_tasks.add(t := asyncio.create_task(fn(wid, key, sf))),
+            t.add_done_callback(_on_task_done),
+        )[-1],
     )
     if count > 0:
         logger.info("启动时恢复了 %d 条孤儿同步记录", count)

@@ -1,6 +1,5 @@
 """工单导入服务 — 从 ticket_source.ticket 幂等导入到 workorder_review。"""
 
-import uuid
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text

@@ -2,15 +2,6 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 from typing import Any, Literal
 
-def _coerce_datetime_to_iso(v: datetime | str | None) -> str | None:
-    """ORM 返回 datetime 对象时转为 ISO 字符串。"""
-    if v is None:
-        return None
-    if isinstance(v, datetime):
-        return v.isoformat()
-    return str(v)
-
-
 from app.core.field_config import load_field_config
 
 # ALLOWED_FIELDS 从 field_config.yaml 自动生成，排除只读/系统/隐藏字段
@@ -65,7 +56,7 @@ class WorkOrderSummary(BaseModel):
     @field_validator('created_at', mode='before')
     @classmethod
     def coerce_created_at(cls, v: datetime | str | None) -> str | None:
-        return _coerce_datetime_to_iso(v)
+        return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
 
     class Config:
         from_attributes = True
@@ -138,7 +129,7 @@ class WorkOrderResponse(BaseModel):
     @field_validator('created_at', 'last_rejected_at', mode='before')
     @classmethod
     def coerce_datetime_fields(cls, v: datetime | str | None) -> str | None:
-        return _coerce_datetime_to_iso(v)
+        return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
 
     class Config:
         from_attributes = True

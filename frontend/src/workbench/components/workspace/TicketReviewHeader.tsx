@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Check, Copy, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +22,6 @@ export function TicketReviewHeader() {
   const beingEditedBy = useReviewStore((s) => s.beingEditedBy);
   const [copied, setCopied] = useState(false);
 
-  // Cleanup copy timeout on unmount
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1500);
@@ -41,41 +41,52 @@ export function TicketReviewHeader() {
   };
 
   return (
-    <div className="shrink-0 border-b border-border bg-background px-5 py-3">
+    <div className="shrink-0 border-b border-border/30 bg-transparent px-5 py-3.5">
       {/* 第 1 行：标题 + 状态 */}
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="truncate text-lg font-semibold leading-tight">
+            <h1 className="truncate text-lg font-semibold leading-tight tracking-tight">
               {ticket.title}
             </h1>
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="font-mono">{ticket.serialNumber}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="h-5 w-5"
-              onClick={copySerial}
-              aria-label="复制工单编号"
-            >
-              {copied ? (
-                <Check className="h-3 w-3 text-success" />
-              ) : (
-                <Copy className="h-3 w-3" />
-              )}
-            </Button>
-            {copied && <span className="text-success">已复制</span>}
+            <span className="font-mono bg-muted/40 rounded-md px-1.5 py-0.5">{ticket.serialNumber}</span>
+            <motion.div whileTap={{ scale: 0.85 }}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-5 w-5 rounded-lg"
+                onClick={copySerial}
+                aria-label="复制工单编号"
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-success" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </Button>
+            </motion.div>
+            {copied && (
+              <motion.span
+                initial={{ opacity: 0, x: -4 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="text-success"
+              >
+                已复制
+              </motion.span>
+            )}
           </div>
         </div>
-
       </div>
 
       {/* 第 2 行：元信息 */}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>来源：{ticket.source}</span>
-        <span>
+        <span className="inline-flex items-center gap-1 bg-muted/30 backdrop-blur-sm rounded-full px-2.5 py-0.5">
+          来源：{ticket.source}
+        </span>
+        <span className="inline-flex items-center gap-1 bg-muted/30 backdrop-blur-sm rounded-full px-2.5 py-0.5">
           创建：
           {new Date(ticket.createdAt).toLocaleString('zh-CN', {
             year: 'numeric',
@@ -85,16 +96,16 @@ export function TicketReviewHeader() {
             minute: '2-digit',
           })}
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 bg-muted/30 backdrop-blur-sm rounded-full px-2.5 py-0.5">
           SLA：
           <SLACountdown remainingMin={ticket.slaRemainingMin} />
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 bg-muted/30 backdrop-blur-sm rounded-full px-2.5 py-0.5">
           <UserCircle2 className="h-3.5 w-3.5" />
           审核人：{ticket.reviewer}
         </span>
         {beingEditedBy && (
-          <Badge variant="warning" className="gap-1">
+          <Badge variant="warning" className="gap-1 animate-pulse-soft">
             并发编辑：{beingEditedBy} 正在编辑
           </Badge>
         )}

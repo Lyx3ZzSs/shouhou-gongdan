@@ -8,8 +8,6 @@
     groups  = config.groups         # list[FieldGroupDef]
     fields  = config.fields         # list[FieldDef]
 """
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from functools import lru_cache

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -15,17 +16,18 @@ import { useReviewStore } from './store/useReviewStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAutoSave } from './hooks/useAutoSave';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { cinematicEnter } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
 /** 左侧栏收起后的窄轨道 */
 function LeftRail() {
   const toggleLeft = useReviewStore((s) => s.toggleLeft);
   return (
-    <div className="flex w-12 shrink-0 flex-col items-center border-r border-border bg-background pt-3 max-lg:hidden">
-      <Button variant="ghost" size="icon" onClick={toggleLeft} aria-label="展开待审核队列">
+    <div className="flex w-12 shrink-0 flex-col items-center border-r border-border/40 bg-background/70 backdrop-blur-xl pt-3 max-lg:hidden">
+      <Button variant="ghost" size="icon" onClick={toggleLeft} aria-label="展开待审核队列" className="rounded-xl hover:bg-primary/10">
         <PanelLeft className="h-4 w-4" />
       </Button>
-      <span className="mt-2 text-[10px] text-muted-foreground [writing-mode:vertical-rl]">
+      <span className="mt-2 text-[10px] text-muted-foreground tracking-[0.2em] [writing-mode:vertical-rl]">
         待审核队列
       </span>
     </div>
@@ -36,11 +38,11 @@ function LeftRail() {
 function RightRail() {
   const toggleRight = useReviewStore((s) => s.toggleRight);
   return (
-    <div className="flex w-12 shrink-0 flex-col items-center border-l border-border bg-background pt-3 max-lg:hidden">
-      <Button variant="ghost" size="icon" onClick={toggleRight} aria-label="展开审核控制台">
+    <div className="flex w-12 shrink-0 flex-col items-center border-l border-border/40 bg-background/70 backdrop-blur-xl pt-3 max-lg:hidden">
+      <Button variant="ghost" size="icon" onClick={toggleRight} aria-label="展开审核控制台" className="rounded-xl hover:bg-primary/10">
         <PanelRight className="h-4 w-4" />
       </Button>
-      <span className="mt-2 text-[10px] text-muted-foreground [writing-mode:vertical-rl]">
+      <span className="mt-2 text-[10px] text-muted-foreground tracking-[0.2em] [writing-mode:vertical-rl]">
         审核控制台
       </span>
     </div>
@@ -65,14 +67,18 @@ export function ReviewWorkbench({ onNavigateStats }: Props) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen flex-col overflow-hidden bg-app text-foreground">
+      <motion.div
+        className="flex h-screen flex-col overflow-hidden bg-transparent text-foreground"
+        variants={cinematicEnter}
+        initial="hidden"
+        animate="visible"
+      >
         <WorkbenchHeader onNavigateStats={onNavigateStats} />
         <div className="flex min-h-0 flex-1 relative">
           {/* 左侧队列 — 桌面端内联，移动端覆盖层 */}
           <div
             className={cn(
               'z-30',
-              // Desktop: normal inline
               'max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-30 max-lg:shadow-xl max-lg:transition-transform max-lg:duration-200',
               leftCollapsed && 'max-lg:-translate-x-full',
             )}
@@ -87,7 +93,7 @@ export function ReviewWorkbench({ onNavigateStats }: Props) {
           {/* 移动端：队列展开时的遮罩 */}
           {!leftCollapsed && (
             <div
-              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
+              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/20 max-lg:backdrop-blur-sm"
               onClick={toggleLeft}
               aria-hidden
             />
@@ -115,7 +121,7 @@ export function ReviewWorkbench({ onNavigateStats }: Props) {
           {/* 移动端：侧栏展开时的遮罩 */}
           {!rightCollapsed && (
             <div
-              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/30"
+              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/20 max-lg:backdrop-blur-sm"
               onClick={toggleRight}
               aria-hidden
             />
@@ -128,7 +134,7 @@ export function ReviewWorkbench({ onNavigateStats }: Props) {
         <VersionConflictDialog />
         <UnsavedSwitchDialog />
         <SubmittedToast />
-      </div>
+      </motion.div>
     </TooltipProvider>
   );
 }

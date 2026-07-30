@@ -1,16 +1,11 @@
+import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { FieldGridItem } from './FieldGridItem';
 import { useReviewStore } from '../../store/useReviewStore';
 import type { FieldDef, FieldGroupId } from '../../types';
 import { cn } from '@/lib/utils';
+import { staggerContainer, staggerItem } from '@/lib/animations';
 
-/**
- * FieldCard — 单个字段分组卡片。
- *
- * 每个卡片包含：
- * - 标题栏：分组名称 + 字段总数 + 异常计数 + 变更计数
- * - 内容区：响应式 Grid 排列 FieldGridItem（lg:3列 sm:2列 移动端:1列）
- */
 export function FieldCard({
   group,
   fields,
@@ -23,7 +18,6 @@ export function FieldCard({
   const anomalies = useReviewStore((s) => s.ticket?.anomalies) ?? [];
   const isCompact = density === 'compact';
 
-  // 从实际渲染的 fields 计算计数，而非从 allGroupFields
   const fieldIds = new Set(fields.map((f) => f.id));
   const anomalyCount = anomalies.filter(
     (a) => a.fieldId && fieldIds.has(a.fieldId),
@@ -38,7 +32,6 @@ export function FieldCard({
       fieldIds.has(a.fieldId),
   ).length;
 
-  // 计算每个字段的列跨
   function getColumnSpan(f: FieldDef): 1 | 2 | 3 {
     if (f.type === 'textarea') return 3;
     const val = fieldStates[f.id]?.currentValue ?? f.originalValue;
@@ -51,15 +44,20 @@ export function FieldCard({
   if (fields.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <motion.div
+      className="rounded-2xl border border-border/40 bg-card/80 backdrop-blur-sm shadow-glass-sm hover:shadow-glass-md transition-shadow duration-300"
+      variants={staggerContainer}
+      initial="hidden"
+      animate="visible"
+    >
       {/* 标题栏 */}
       <div
         className={cn(
-          'flex items-center gap-2 border-b border-border bg-muted/20 px-4',
+          'flex items-center gap-2 border-b border-border/20 bg-muted/20 rounded-t-2xl px-4',
           isCompact ? 'h-8' : 'h-10',
         )}
       >
-        <span className="text-sm font-semibold text-foreground">
+        <span className="text-sm font-semibold tracking-tight text-foreground">
           {group.name}
         </span>
         <span className="text-xs text-muted-foreground">
@@ -82,20 +80,20 @@ export function FieldCard({
         )}
       </div>
 
-      {/* 字段网格：响应式列数 */}
+      {/* 字段网格 */}
       <div
         className={cn(
-          'grid gap-px bg-border',
+          'grid gap-px bg-border/30',
           'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
           isCompact ? 'text-xs' : 'text-sm',
         )}
       >
         {fields.map((f) => (
-          <div key={f.id} className="bg-card">
+          <motion.div key={f.id} className="bg-card/60" variants={staggerItem}>
             <FieldGridItem field={f} columnSpan={getColumnSpan(f)} />
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

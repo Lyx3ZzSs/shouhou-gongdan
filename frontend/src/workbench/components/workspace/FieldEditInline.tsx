@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +16,7 @@ import { REVIEW_REASONS } from '../../lib/constants';
 import { formatValue } from '../../lib/format';
 import { useReviewStore } from '../../store/useReviewStore';
 import type { FieldDef } from '../../types';
+import { editPanelVariants } from '@/lib/animations';
 
 /** 内联字段编辑：值输入 + 修改原因选择 + 确认/取消 */
 export function FieldEditInline({ field }: { field: FieldDef }) {
@@ -87,10 +89,16 @@ export function FieldEditInline({ field }: { field: FieldDef }) {
   };
 
   return (
-    <div className="flex flex-col gap-1.5 py-1">
+    <motion.div
+      className="flex flex-col gap-1.5 py-1 px-0.5"
+      variants={editPanelVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+    >
       {/* 编辑时显示原值对照 */}
       <div className="text-xs text-muted-foreground">
-        原值：<span className="font-mono">{formatValue(field.originalValue, field)}</span>
+        原值：<span className="font-mono bg-muted/30 rounded-md px-1.5 py-0.5">{formatValue(field.originalValue, field)}</span>
       </div>
       {renderValueInput()}
       <div className="flex items-center gap-1.5">
@@ -109,7 +117,7 @@ export function FieldEditInline({ field }: { field: FieldDef }) {
             ))}
           </SelectContent>
         </Select>
-        <Button size="sm" className="h-7 px-2" onClick={save}>
+        <Button size="sm" className="h-7 px-2 shadow-sm shadow-success/20" onClick={save}>
           <Check className="h-3.5 w-3.5" />
           确认
         </Button>
@@ -118,6 +126,6 @@ export function FieldEditInline({ field }: { field: FieldDef }) {
           取消
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }

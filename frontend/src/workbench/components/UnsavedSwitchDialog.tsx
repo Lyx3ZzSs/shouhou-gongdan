@@ -21,7 +21,9 @@ export function UnsavedSwitchDialog() {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-warning" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-warning/10 border border-warning/20">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+            </div>
             切换工单
           </DialogTitle>
           <DialogDescription>
@@ -29,10 +31,10 @@ export function UnsavedSwitchDialog() {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={cancelSwitch}>
+          <Button variant="outline" onClick={cancelSwitch} className="rounded-xl">
             取消
           </Button>
-          <Button variant="destructive" onClick={confirmSwitch}>
+          <Button variant="destructive" onClick={confirmSwitch} className="rounded-xl">
             丢弃修改并切换
           </Button>
         </DialogFooter>

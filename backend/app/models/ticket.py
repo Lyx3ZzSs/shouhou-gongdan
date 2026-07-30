@@ -1,6 +1,6 @@
 """v_ticket 视图模型 — 只读，映射 ticket_source.ticket LEFT JOIN project_info。"""
 
-from sqlalchemy import Column, Integer, String, BigInteger, Text
+from sqlalchemy import Column, String, BigInteger, Text
 from .base import Base
 
 

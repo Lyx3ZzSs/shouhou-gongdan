@@ -37,7 +37,6 @@ export function ReviewSubmitDialog() {
   const [openNext, setOpenNext] = useState(false);
   const [showNotesError, setShowNotesError] = useState(false);
 
-  // Reset error state when decision or notes change
   useEffect(() => {
     setShowNotesError(false);
   }, [decision]);
@@ -65,7 +64,6 @@ export function ReviewSubmitDialog() {
     submit(decision, openNext);
   };
 
-  // 修改原因汇总
   const reasonSummary = new Map<string, number>();
   for (const c of changes) {
     reasonSummary.set(c.reason, (reasonSummary.get(c.reason) ?? 0) + 1);
@@ -96,7 +94,7 @@ export function ReviewSubmitDialog() {
                 {changes.map((c) => {
                   const field = ticket?.fields.find((f) => f.id === c.fieldId);
                   return (
-                    <li key={c.fieldId} className="flex flex-col gap-0.5">
+                    <li key={c.fieldId} className="flex flex-col gap-0.5 rounded-lg bg-card/40 border border-border/20 p-2">
                       <span className="text-xs text-muted-foreground">{c.fieldName}</span>
                       <FieldDiff before={c.before} after={c.after} field={field} />
                     </li>
@@ -119,7 +117,7 @@ export function ReviewSubmitDialog() {
                 <p className="text-xs font-medium text-destructive">尚未处理的问题：</p>
                 <ul className="space-y-0.5">
                   {unresolved.map((a) => (
-                    <li key={a.id} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <li key={a.id} className="flex items-start gap-1.5 text-xs text-muted-foreground rounded-lg bg-warning/[0.04] border-l-2 border-warning/40 p-2">
                       <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
                       {a.message}
                     </li>
@@ -128,10 +126,10 @@ export function ReviewSubmitDialog() {
               </div>
             )}
             {unresolved.length === 0 && (
-              <p className="flex items-center gap-1.5 text-xs text-success">
+              <div className="flex items-center gap-1.5 rounded-lg bg-success/5 p-2 text-xs text-success">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 所有问题均已处理
-              </p>
+              </div>
             )}
           </section>
 
@@ -170,7 +168,7 @@ export function ReviewSubmitDialog() {
                 }
               }}
               placeholder={decision === 'rejected' ? '驳回时必须填写审核备注…' : '填写审核备注…'}
-              className={`min-h-[64px] ${showNotesError ? 'border-destructive' : ''}`}
+              className={`min-h-[64px] ${showNotesError ? 'border-destructive ring-1 ring-destructive/20' : ''}`}
             />
             {showNotesError && (
               <p className="mt-1 text-xs text-destructive">驳回时必须填写审核备注</p>
@@ -178,26 +176,26 @@ export function ReviewSubmitDialog() {
           </section>
 
           {/* 进度摘要 */}
-          <section className="rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
+          <section className="rounded-xl bg-muted/30 backdrop-blur-sm p-2.5 text-xs text-muted-foreground">
             审核进度 {progress.confirmed + progress.modified} / {progress.total}，已确认 {progress.confirmed}，已修改 {progress.modified}，待处理异常 {progress.pendingAnomalies}。
           </section>
         </div>
 
         <DialogFooter className="flex items-center justify-between sm:justify-between">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={openNext}
               onChange={(e) => setOpenNext(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-border"
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
             />
             提交并进入下一条
           </label>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={closeSubmitDialog} disabled={submitting}>
+            <Button variant="outline" onClick={closeSubmitDialog} disabled={submitting} className="rounded-xl">
               取消
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
+            <Button onClick={handleSubmit} disabled={submitting} className="rounded-xl shadow-glow-primary">
               {submitting ? '提交中…' : `提交（${meta.label}）`}
             </Button>
           </div>

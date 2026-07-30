@@ -12,13 +12,13 @@ export function SLACountdown({
   const s = slaStatus(remainingMin);
   const tone =
     s.tone === 'danger'
-      ? 'text-destructive'
+      ? 'text-destructive animate-pulse-soft'
       : s.tone === 'warning'
         ? 'text-warning'
         : 'text-muted-foreground';
   return (
     <span
-      className={cn('inline-flex items-center gap-1 text-xs font-medium tabular-nums', tone, className)}
+      className={cn('inline-flex items-center gap-1 text-xs font-medium tabular-nums transition-colors duration-300', tone, className)}
       title="SLA 剩余时间"
     >
       <Clock className="h-3.5 w-3.5" />

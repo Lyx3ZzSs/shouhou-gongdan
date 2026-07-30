@@ -16,7 +16,6 @@ from app.services.lock_service import get_lock_service
 from app.core.config import settings
 from app.clients.xiaoshouyi import (
     get_xiaoshouyi_client,
-    CreateWorkOrderRequest,
 )
 
 logger = logging.getLogger(__name__)

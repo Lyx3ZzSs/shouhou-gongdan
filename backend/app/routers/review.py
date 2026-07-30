@@ -3,7 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sa_update, delete as sa_delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.auth.dependencies import get_current_user, require_admin, require_any_role
+from app.auth.dependencies import require_admin, require_any_role
 from app.auth.schemas import CurrentUser
 from app.models.workorder import WorkOrderReview
 from app.models.workorder_stash import WorkOrderStash
@@ -11,7 +11,7 @@ from app.services.lock_service import get_lock_service
 from app.schemas.review import (
     ReviewRequest, ReviewResponse,
     ConfirmRequest, ConfirmResponse,
-    WorkOrderResponse, WorkOrderSummary, AuditLogEntry,
+    WorkOrderResponse, AuditLogEntry,
     StashRequest, StashResponse, StashData,
     PaginatedWorkOrderSummary,
 )

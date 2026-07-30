@@ -52,21 +52,23 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div
           className={cn(
-            'flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center',
+            'flex flex-col items-center justify-center gap-3 rounded-2xl border border-destructive/20 bg-destructive/[0.03] backdrop-blur-sm p-8 text-center',
             this.props.className,
           )}
           role="alert"
         >
-          <AlertTriangle className="h-8 w-8 text-destructive" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/8 border border-destructive/15">
+            <AlertTriangle className="h-7 w-7 text-destructive/80" />
+          </div>
           <div>
             <p className="text-sm font-medium text-foreground">
               {this.props.panelName} 加载失败
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground max-w-sm">
               {this.state.error?.message || '未知错误'}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={this.handleRetry}>
+          <Button variant="outline" size="sm" onClick={this.handleRetry} className="rounded-xl">
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
             重试
           </Button>

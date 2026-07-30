@@ -11,9 +11,9 @@ import type { FieldFilter } from '../../types';
 import { cn } from '@/lib/utils';
 
 const FILTERS: { value: FieldFilter; label: string }[] = [
-  { value: 'all', label: '查看全部字段' },
-  { value: 'abnormal', label: '只看异常字段' },
-  { value: 'modified', label: '只看已修改字段' },
+  { value: 'all', label: '全部字段' },
+  { value: 'abnormal', label: '异常字段' },
+  { value: 'modified', label: '已修改' },
 ];
 
 export function ReviewToolbar() {
@@ -26,8 +26,9 @@ export function ReviewToolbar() {
   const changes = useEffectiveChanges();
 
   return (
-    <div className="sticky top-0 z-20 flex h-10 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
-      <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+    <div className="sticky top-0 z-20 flex h-10 shrink-0 items-center gap-1 border-b border-border/30 bg-background/80 backdrop-blur-xl px-4">
+      {/* Pill 分段控件 */}
+      <div className="flex items-center rounded-full bg-muted/50 p-0.5">
         {FILTERS.map((f) => {
           const anomalyCount = progress.pendingAnomalies;
           const modifiedCount = changes.length;
@@ -37,10 +38,10 @@ export function ReviewToolbar() {
               onClick={() => setFieldFilter(f.value)}
               aria-pressed={fieldFilter === f.value}
               className={cn(
-                'rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors',
+                'rounded-full px-3 py-1 text-xs font-medium transition-all duration-200',
                 fieldFilter === f.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  ? 'bg-background shadow-sm ring-1 ring-border text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               {f.label}
@@ -49,7 +50,7 @@ export function ReviewToolbar() {
                   className={cn(
                     'ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] tabular-nums',
                     fieldFilter === f.value
-                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      ? 'bg-warning/15 text-warning'
                       : 'bg-warning/20 text-warning',
                   )}
                 >
@@ -61,7 +62,7 @@ export function ReviewToolbar() {
                   className={cn(
                     'ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] tabular-nums',
                     fieldFilter === f.value
-                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      ? 'bg-primary/10 text-primary'
                       : 'bg-primary/20 text-primary',
                   )}
                 >
@@ -82,6 +83,7 @@ export function ReviewToolbar() {
               size="icon-sm"
               onClick={toggleDensity}
               aria-label={density === 'standard' ? '切换为紧凑模式' : '切换为标准模式'}
+              className="rounded-xl hover:bg-accent/50"
             >
               {density === 'standard' ? (
                 <Minimize2 className="h-3.5 w-3.5" />
@@ -93,10 +95,15 @@ export function ReviewToolbar() {
           <TooltipContent>{density === 'standard' ? '紧凑模式' : '标准模式'}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <Button variant="ghost" size="sm" onClick={jumpToNextAnomaly} className="gap-1.5 text-xs">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={jumpToNextAnomaly}
+        className="gap-1.5 text-xs rounded-xl"
+      >
         <ArrowDown className="h-3.5 w-3.5" />
         跳到下一个问题
-        <kbd className="ml-1 rounded border border-border bg-muted px-1 text-[10px] text-muted-foreground">
+        <kbd className="ml-1 rounded border border-border/50 bg-muted/50 px-1 text-[10px] text-muted-foreground">
           Alt+↓
         </kbd>
       </Button>

@@ -12,8 +12,8 @@ export function ReviewNotes() {
   return (
     <section className="flex flex-col">
       <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <StickyNote className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">审核备注</span>
+        <StickyNote className="h-4 w-4 text-primary/60" />
+        <span className="text-sm font-medium tracking-tight">审核备注</span>
       </div>
 
       <div className="px-3 pb-3">
@@ -31,9 +31,10 @@ export function ReviewNotes() {
             {NOTE_PHRASES.map((phrase) => (
               <Button
                 key={phrase}
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => appendNotePhrase(phrase)}
+                className="rounded-full bg-muted/30 backdrop-blur-sm border border-border/20 hover:bg-accent/50 hover:border-border text-xs h-auto py-1 px-3 transition-all duration-200"
               >
                 {phrase}
               </Button>
