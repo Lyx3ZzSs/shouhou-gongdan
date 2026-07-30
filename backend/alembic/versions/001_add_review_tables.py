@@ -71,7 +71,7 @@ def upgrade() -> None:
     sa.Column('ai_value', sa.Text(), nullable=True),
     sa.Column('human_value', sa.Text(), nullable=True),
     sa.Column('sample_status', sa.String(length=16), nullable=False),
-    sa.Column('source', sa.String(length=16), nullable=False),
+    sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['audit_log_id'], ['workorder_audit_log.id'], ),
     sa.PrimaryKeyConstraint('id')

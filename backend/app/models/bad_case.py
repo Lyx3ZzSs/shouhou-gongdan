@@ -14,7 +14,7 @@ class BadCaseSample(Base):
     ai_value = Column(Text, nullable=True)
     human_value = Column(Text, nullable=True)
     sample_status = Column(String(16), nullable=False, default="pending")
-    source = Column(String(16), nullable=False, default="review_correction")
+    source = Column(String(32), nullable=False, default="review_correction")
     # PostgreSQL TIMESTAMPTZ for proper timezone handling with asyncpg.
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 

@@ -107,7 +107,7 @@ STATEMENTS = [
         ai_value        TEXT            NULL,
         human_value     TEXT            NULL,
         sample_status   VARCHAR(16)     NOT NULL DEFAULT 'pending',
-        source          VARCHAR(16)     NOT NULL DEFAULT 'review_correction',
+        source          VARCHAR(32)     NOT NULL DEFAULT 'review_correction',
         created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
     )
     """,

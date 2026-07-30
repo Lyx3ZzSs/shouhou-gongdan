@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS bad_case_sample (
     human_value     TEXT            NULL,
     sample_status   VARCHAR(16)     NOT NULL DEFAULT 'pending'
                     CHECK (sample_status IN ('pending', 'reviewed', 'accepted', 'rejected')),
-    source          VARCHAR(16)     NOT NULL DEFAULT 'review_correction',
+    source          VARCHAR(32)     NOT NULL DEFAULT 'review_correction',
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 

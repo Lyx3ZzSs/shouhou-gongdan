@@ -229,7 +229,7 @@ async def engine(_test_db_session):
                 ai_value TEXT,
                 human_value TEXT,
                 sample_status VARCHAR(16) NOT NULL DEFAULT 'pending',
-                source VARCHAR(16) NOT NULL DEFAULT 'review_correction',
+                source VARCHAR(32) NOT NULL DEFAULT 'review_correction',
                 created_at TIMESTAMP NOT NULL DEFAULT NOW()
             )
         """))
