@@ -631,46 +631,10 @@ fields:
     ui_visible: true
 
   # ====== 系统信息 ======
-  - key: serial_number
+  - key: ticket_no
     name: 工单编号
     group: system
     type: text
-    readonly: true
-    ui_visible: true
-  - key: version
-    name: 数据版本
-    group: system
-    type: number
-    readonly: true
-    ui_visible: true
-  - key: status
-    name: 审核状态
-    group: system
-    type: text
-    readonly: true
-    ui_visible: true
-  - key: reject_count
-    name: 驳回次数
-    group: system
-    type: number
-    readonly: true
-    ui_visible: true
-  - key: last_reject_reason
-    name: 上次驳回原因
-    group: system
-    type: textarea
-    readonly: true
-    ui_visible: true
-  - key: last_rejected_by
-    name: 上次驳回人
-    group: system
-    type: text
-    readonly: true
-    ui_visible: true
-  - key: last_rejected_at
-    name: 上次驳回时间
-    group: system
-    type: datetime
     readonly: true
     ui_visible: true
 

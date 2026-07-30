@@ -164,7 +164,7 @@ export interface components {
             /** Bad Case Count */
             bad_case_count: number;
             /** Next Status */
-            next_status: string;
+            next_review_status: string;
             /**
              * Sync Status
              * @default pending
@@ -237,7 +237,7 @@ export interface components {
             /** Bad Case Count */
             bad_case_count: number;
             /** Next Status */
-            next_status: string;
+            next_review_status: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -261,8 +261,8 @@ export interface components {
             id: string;
             /** Version */
             version: number;
-            /** Status */
-            status?: string | null;
+            /** Review Status */
+            review_status?: string | null;
             /**
              * Reject Count
              * @default 0
@@ -274,8 +274,8 @@ export interface components {
             last_rejected_by?: string | null;
             /** Last Rejected At */
             last_rejected_at?: string | null;
-            /** Serial Number */
-            serial_number?: string | null;
+            /** Ticket No */
+            ticket_no?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Initiator */
@@ -348,12 +348,12 @@ export interface components {
         WorkOrderSummary: {
             /** Id */
             id: string;
-            /** Serial Number */
-            serial_number?: string | null;
+            /** Ticket No */
+            ticket_no?: string | null;
             /** Station Name */
             station_name?: string | null;
-            /** Status */
-            status?: string | null;
+            /** Review Status */
+            review_status?: string | null;
             /** Customer Name */
             customer_name?: string | null;
             /** Created At */

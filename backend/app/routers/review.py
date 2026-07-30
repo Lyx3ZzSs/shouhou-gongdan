@@ -5,7 +5,7 @@ from sqlalchemy import select, update as sa_update, delete as sa_delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.auth.dependencies import get_current_user, require_admin, require_any_role
 from app.auth.schemas import CurrentUser
-from app.models.workorder import WorkOrder
+from app.models.workorder import WorkOrderReview
 from app.models.workorder_stash import WorkOrderStash
 from app.services.lock_service import get_lock_service
 from app.schemas.review import (
@@ -163,9 +163,9 @@ async def stash_workorder(
 
         if request.mode == "manual":
             await db.execute(
-                sa_update(WorkOrder)
-                .where(WorkOrder.id == workorder_id)
-                .values(status='stashed')
+                sa_update(WorkOrderReview)
+                .where(WorkOrderReview.id == workorder_id)
+                .values(review_status='stashed')
             )
 
     if request.mode == "manual":
@@ -262,16 +262,16 @@ async def list_sync_failures(
 ):
     """列出同步失败的工单（sync_status='failed'）。"""
     result = await db.execute(
-        select(WorkOrder)
-        .where(WorkOrder.sync_status == 'failed')
-        .order_by(WorkOrder.reviewed_at.desc())
+        select(WorkOrderReview)
+        .where(WorkOrderReview.sync_status == 'failed')
+        .order_by(WorkOrderReview.reviewed_at.desc())
         .limit(limit)
     )
     rows = result.scalars().all()
     return [
         {
             "id": r.id,
-            "serial_number": r.serial_number,
+            "ticket_no": r.ticket_no,
             "sync_attempts": r.sync_attempts,
             "sync_last_error": r.sync_last_error,
             "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
@@ -293,7 +293,7 @@ async def retry_sync(
     的记录（幂等已完成）将被直接标记为 synced 而不重复调用 API。
     """
     result = await db.execute(
-        select(WorkOrder).where(WorkOrder.id == workorder_id)
+        select(WorkOrderReview).where(WorkOrderReview.id == workorder_id)
     )
     wo = result.scalar_one_or_none()
     if wo is None:
@@ -308,8 +308,8 @@ async def retry_sync(
     # 如果已有 external_id，直接标记为 synced（幂等已完成）
     if wo.sync_external_id:
         await db.execute(
-            sa_update(WorkOrder)
-            .where(WorkOrder.id == workorder_id)
+            sa_update(WorkOrderReview)
+            .where(WorkOrderReview.id == workorder_id)
             .values(sync_status='synced'),
         )
         await db.commit()

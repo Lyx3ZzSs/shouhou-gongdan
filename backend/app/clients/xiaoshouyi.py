@@ -93,6 +93,64 @@ class CreateWorkOrderRequest(BaseModel):
         return data
 
 
+# ---------------------------------------------------------------------------
+# DB → 销售易 API 字段映射
+# ---------------------------------------------------------------------------
+
+# DB 列名（v_ticket 视图驼峰命名）→ 销售易 API 字段名（完全一致时省略映射）
+DB_TO_API_FIELD_MAP: dict[str, str] = {
+    "ownerId":                "ownerId",
+    "dimDepart":              "dimDepart",
+    "entityType":             "entityType",
+    "name":                   "name",
+    "caseSource":             "caseSource",
+    "feedbackChannel__c":     "feedbackChannel__c",
+    "workOrderStatus__c":     "workOrderStatus__c",
+    "caseDescription":        "caseDescription",
+    "caseStatus":             "caseStatus",
+    "caseAccountId":          "caseAccountId",
+    "custLevel1__c":          "custLevel1__c",
+    "projectName__c":         "projectName__c",
+    "projectProvince__c":     "projectProvince__c",
+    "bigCustShortName__c":    "bigCustShortName__c",
+    "serviceCycleStart__c":   "serviceCycleStart__c",
+    "serviceCycleEnd__c":     "serviceCycleEnd__c",
+    "isOfflineApply__c":      "isOfflineApply__c",
+    "isOverdueService__c":    "isOverdueService__c",
+    "problemLevel__c":        "problemLevel__c",
+    "problemType1__c":        "problemType1__c",
+    "problemType2__c":        "problemType2__c",
+    "problemType3__c":        "problemType3__c",
+    "feedbackCount__c":       "feedbackCount__c",
+    "problemResponsible__c":  "problemResponsible__c",
+    "problemDept__c":         "problemDept__c",
+    "feedbackUserName__c":    "feedbackUserName__c",
+    "feedbackUserContact__c": "feedbackUserContact__c",
+    "needCallBack__c":        "needCallBack__c",
+    "isHandled__c":           "isHandled__c",
+    "needOnSite__c":          "needOnSite__c",
+    "remark__c":              "remark__c",
+    "relatedAttachment__c":   "relatedAttachment__c",
+    "planFeedbackTime__c":    "planFeedbackTime__c",
+    "requireSolveTime__c":    "requireSolveTime__c",
+    "defectFlag__c":          "defectFlag__c",
+}
+
+
+def map_db_to_xiaoshouyi(
+    merged: dict[str, object],
+    idempotency_key: str = "",
+) -> CreateWorkOrderRequest:
+    """将 merge(v_ticket, field_overrides) 的结果映射为销售易 API 请求。"""
+    return CreateWorkOrderRequest(
+        idempotency_key=idempotency_key,
+        **{
+            api_key: str(merged.get(db_key, "")) if merged.get(db_key) is not None else ""
+            for db_key, api_key in DB_TO_API_FIELD_MAP.items()
+        }
+    )
+
+
 class CreateWorkOrderResponse(BaseModel):
     """销售易返回的工单创建结果。"""
     external_id: str | None = None

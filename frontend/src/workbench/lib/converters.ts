@@ -306,13 +306,7 @@ const FIELD_MAPPING: FieldMapping[] = [
   { backendKey: 'requireSolveTime__c', id: 'requireSolveTime__c', name: '要求解决时间', group: 'handling', type: 'datetime' },
 
   // ---- 系统信息 (system) ----
-  { backendKey: 'serial_number', id: 'serial_number', name: '工单编号', group: 'system', type: 'text', readonly: true },
-  { backendKey: 'version', id: 'version', name: '数据版本', group: 'system', type: 'number', readonly: true },
-  { backendKey: 'status', id: 'status', name: '审核状态', group: 'system', type: 'text', readonly: true },
-  { backendKey: 'reject_count', id: 'reject_count', name: '驳回次数', group: 'system', type: 'number', readonly: true },
-  { backendKey: 'last_reject_reason', id: 'last_reject_reason', name: '上次驳回原因', group: 'system', type: 'textarea', readonly: true },
-  { backendKey: 'last_rejected_by', id: 'last_rejected_by', name: '上次驳回人', group: 'system', type: 'text', readonly: true },
-  { backendKey: 'last_rejected_at', id: 'last_rejected_at', name: '上次驳回时间', group: 'system', type: 'datetime', readonly: true },
+  { backendKey: 'ticket_no', id: 'ticket_no', name: '工单编号', group: 'system', type: 'text', readonly: true },
 ];
 
 const MAPPING_BY_KEY: Record<string, FieldMapping> = {};
@@ -327,10 +321,10 @@ for (const m of FIELD_MAPPING) {
 export function workOrderSummaryToQueueItem(
   summary: GeneratedWorkOrderSummary,
 ): QueueItem {
-  const status = normalizeStatus(summary.status);
+  const status = normalizeStatus((summary as Record<string, unknown>).review_status as string);
   return {
     id: summary.id,
-    serialNumber: summary.serial_number ?? '',
+    serialNumber: summary.ticket_no ?? '',
     title: (summary as Record<string, unknown>).name as string
       ?? (summary as Record<string, unknown>).caseAccountId as string
       ?? '未知工单',
@@ -368,7 +362,7 @@ export function workOrderDataToReviewTicket(
 
   return {
     id: data.id,
-    serialNumber: data.serial_number ?? '',
+    serialNumber: data.ticket_no ?? '',
     title: (dataRec.name as string)
       ?? (dataRec.projectName__c as string)
       ?? (dataRec.caseAccountId as string)
@@ -376,7 +370,7 @@ export function workOrderDataToReviewTicket(
     type: (dataRec.workOrderStatus__c as string) ?? '',
     urgency: deriveUrgency((dataRec.problemLevel__c as string) ?? null),
     source: (dataRec.caseSource as string) ?? '',
-    status: normalizeStatus(data.status) as ReviewTicket['status'],
+    status: normalizeStatus((dataRec.review_status as string) ?? null) as ReviewTicket['status'],
     createdAt: data.created_at ?? nowIso(),
     slaRemainingMin: computeSlaMinutes((dataRec.requireSolveTime__c as string) ?? null),
     reviewer: '',

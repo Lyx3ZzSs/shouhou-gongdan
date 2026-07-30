@@ -24,18 +24,25 @@ export interface ReviewResponse {
   status: 'confirmed' | 'rejected';
   change_count: number;
   bad_case_count: number;
-  next_status: string;
+  next_review_status: string;  // was: next_status
 }
 
 export interface WorkOrderData {
   id: string;
   version: number;
-  status: string;
+  ticket_no: string | null;       // was: serial_number
+  review_status: string | null;   // was: status
   reject_count: number;
   last_reject_reason: string | null;
   last_rejected_by: string | null;
   last_rejected_at: string | null;
   review_notes: string | null;
+  field_overrides: Record<string, unknown> | null;
+  sync_status: string | null;
+  sync_external_id: string | null;
+  review_started_at: string | null;
+  review_duration_seconds: number | null;
+  updated_at: string | null;
   ai_confidence?: number | null;
 
   // 销售易 serviceCase API 业务字段
@@ -75,11 +82,10 @@ export interface WorkOrderData {
   requireSolveTime__c: string;
   defectFlag__c: string;
 
-  // 只读字段
-  serial_number: string;
+  // 只读 / 元数据字段
   created_at: string;
-  initiator: string;
-  initiator_department: string;
+  initiator: string | null;
+  initiator_department: string | null;
   [key: string]: unknown;
 }
 

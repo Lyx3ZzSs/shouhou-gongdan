@@ -92,13 +92,7 @@ export const FIELD_TEMPLATE: FieldDef[] = [
   { id: 'requireSolveTime__c', name: '要求解决时间', group: 'handling', type: 'datetime', originalValue: '1784883900' },
 
   // ---- 系统信息 (system) ----
-  { id: 'serial_number', name: '工单编号', group: 'system', type: 'text', originalValue: 'WO-20260717-0381', readonly: true },
-  { id: 'version', name: '数据版本', group: 'system', type: 'number', originalValue: 2, readonly: true },
-  { id: 'status', name: '审核状态', group: 'system', type: 'text', originalValue: 'pending_review', readonly: true },
-  { id: 'reject_count', name: '驳回次数', group: 'system', type: 'number', originalValue: 0, readonly: true },
-  { id: 'last_reject_reason', name: '上次驳回原因', group: 'system', type: 'textarea', originalValue: '', readonly: true },
-  { id: 'last_rejected_by', name: '上次驳回人', group: 'system', type: 'text', originalValue: '', readonly: true },
-  { id: 'last_rejected_at', name: '上次驳回时间', group: 'system', type: 'datetime', originalValue: '', readonly: true },
+  { id: 'ticket_no', name: '工单编号', group: 'system', type: 'text', originalValue: 'WO-20260717-0381', readonly: true },
 ];
 
 /** 异常模板 */
@@ -191,7 +185,7 @@ export function buildTicket(item: QueueItem): ReviewTicket {
   const isMain = item.id === MAIN_TICKET_ID;
   const fields = FIELD_TEMPLATE.map((f) => ({
     ...f,
-    ...(f.id === 'serial_number' ? { originalValue: item.serialNumber } : {}),
+    ...(f.id === 'ticket_no' ? { originalValue: item.serialNumber } : {}),
     ...(f.id === 'name' ? { originalValue: item.title } : {}),
     ...(f.id === 'workOrderStatus__c' ? { originalValue: isMain ? '1' : '1' } : {}),
     ...(f.id === 'created_at' ? { originalValue: item.createdAt } : {}),

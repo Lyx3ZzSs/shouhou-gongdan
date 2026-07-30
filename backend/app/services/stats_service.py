@@ -24,13 +24,13 @@ class StatsService:
                       FILTER (WHERE review_duration_seconds IS NOT NULL))::int
                     AS avg_duration_seconds,
                 ROUND(
-                    COUNT(*) FILTER (WHERE status = 'confirmed') * 100.0
-                    / NULLIF(COUNT(*) FILTER (WHERE status IN ('confirmed', 'pending_review')), 0)
+                    COUNT(*) FILTER (WHERE review_status = 'confirmed') * 100.0
+                    / NULLIF(COUNT(*) FILTER (WHERE review_status IN ('confirmed', 'pending_review')), 0)
                 )::numeric(5,1) AS approval_rate,
-                COUNT(*) FILTER (WHERE status = 'pending_review') AS pending_count
-            FROM workorder
+                COUNT(*) FILTER (WHERE review_status = 'pending_review') AS pending_count
+            FROM workorder_review
             WHERE reviewed_at IS NOT NULL
-               OR status = 'pending_review'
+               OR review_status = 'pending_review'
         """))
         row = result.mappings().first()
         return dict(row) if row else {}
@@ -52,12 +52,12 @@ class StatsService:
             SELECT
                 reviewed_by AS reviewer_name,
                 COUNT(*) AS total_reviewed,
-                COUNT(*) FILTER (WHERE status = 'confirmed') AS approved,
-                COUNT(*) FILTER (WHERE status = 'pending_review') AS rejected,
+                COUNT(*) FILTER (WHERE review_status = 'confirmed') AS approved,
+                COUNT(*) FILTER (WHERE review_status = 'pending_review') AS rejected,
                 ROUND(AVG(review_duration_seconds)
                       FILTER (WHERE review_duration_seconds IS NOT NULL))::int
                     AS avg_duration_seconds
-            FROM workorder
+            FROM workorder_review
             WHERE {' AND '.join(conditions)}
             GROUP BY reviewed_by
             ORDER BY total_reviewed DESC
@@ -70,14 +70,14 @@ class StatsService:
             SELECT
                 d::date AS date,
                 COALESCE(COUNT(w.reviewed_at), 0) AS reviewed_count,
-                COALESCE(COUNT(*) FILTER (WHERE w.status = 'confirmed'), 0) AS approved_count,
-                COALESCE(COUNT(*) FILTER (WHERE w.status = 'pending_review'), 0) AS rejected_count
+                COALESCE(COUNT(*) FILTER (WHERE w.review_status = 'confirmed'), 0) AS approved_count,
+                COALESCE(COUNT(*) FILTER (WHERE w.review_status = 'pending_review'), 0) AS rejected_count
             FROM generate_series(
                 CURRENT_DATE - CAST(:days AS integer) + 1,
                 CURRENT_DATE,
                 '1 day'::interval
             ) AS d
-            LEFT JOIN workorder w ON w.reviewed_at::date = d::date
+            LEFT JOIN workorder_review w ON w.reviewed_at::date = d::date
             GROUP BY d::date
             ORDER BY d::date
         """), {"days": days})
@@ -95,7 +95,7 @@ class StatsService:
                     WHEN review_duration_seconds >= 1800           THEN '>30分钟'
                 END AS range,
                 COUNT(*) AS count
-            FROM workorder
+            FROM workorder_review
             WHERE review_duration_seconds IS NOT NULL
             GROUP BY 1
             ORDER BY MIN(review_duration_seconds)
@@ -107,13 +107,13 @@ class StatsService:
         rows = await self.db.execute(text("""
             SELECT
                 CASE
-                    WHEN status = 'pending'         THEN '待审核'
-                    WHEN status = 'confirmed'       THEN '已通过'
-                    WHEN status = 'pending_review'  THEN '已驳回'
-                    ELSE status
+                    WHEN review_status = 'pending_review' THEN '待审核'
+                    WHEN review_status = 'confirmed'      THEN '已通过'
+                    WHEN review_status = 'returned'       THEN '已驳回'
+                    ELSE review_status
                 END AS status,
                 COUNT(*) AS count
-            FROM workorder
+            FROM workorder_review
             GROUP BY 1
             ORDER BY COUNT(*) DESC
         """))

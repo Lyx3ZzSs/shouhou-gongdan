@@ -55,9 +55,9 @@ class FieldChange(BaseModel):
 class WorkOrderSummary(BaseModel):
     """Summary row for GET /api/workorders list."""
     id: str
-    serial_number: str | None = None
+    ticket_no: str | None = None
     name: str | None = None
-    status: str | None = None
+    review_status: str | None = None
     caseAccountId: str | None = None
     bigCustShortName__c: str | None = None
     created_at: str | None = None
@@ -72,19 +72,25 @@ class WorkOrderSummary(BaseModel):
 
 
 class WorkOrderResponse(BaseModel):
-    """Response for GET /api/workorders/{id} — mirrors frontend WorkOrderData."""
+    """Response for GET /api/workorders/{id} — merges v_ticket business fields + workorder_review metadata."""
     id: str
     version: int
-    status: str | None = None
+    ticket_no: str | None = None
+    review_status: str | None = None
     reject_count: int = 0
     last_reject_reason: str | None = None
     last_rejected_by: str | None = None
     last_rejected_at: str | None = None
     review_notes: str | None = None
-    serial_number: str | None = None
     created_at: str | None = None
+    updated_at: str | None = None
     initiator: str | None = None
     initiator_department: str | None = None
+    field_overrides: dict | None = None
+    sync_status: str | None = None
+    sync_external_id: str | None = None
+    review_started_at: str | None = None
+    review_duration_seconds: int | None = None
 
     # ---- 销售易 serviceCase API 业务字段 ----
 
@@ -175,7 +181,7 @@ class ReviewResponse(BaseModel):
     status: Literal["confirmed", "rejected"]
     change_count: int
     bad_case_count: int
-    next_status: str
+    next_review_status: str  # was: next_status
 
 
 class ConfirmResponse(BaseModel):
@@ -189,7 +195,7 @@ class ConfirmResponse(BaseModel):
     status: Literal["confirmed", "rejected"]
     change_count: int
     bad_case_count: int
-    next_status: str
+    next_review_status: str  # was: next_status
     sync_status: Literal["pending", "syncing", "synced", "failed"] = "pending"
 
 
