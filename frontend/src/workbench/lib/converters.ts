@@ -20,6 +20,7 @@ import type {
   GeneratedAuditLogEntry,
 } from '../../api/review';
 import type { FieldChange } from '../../types/review';
+import { getCurrentUserName } from '../../auth/parseUser';
 
 // ---------------------------------------------------------------------------
 // 1. 字段映射配置
@@ -372,7 +373,7 @@ export function workOrderDataToReviewTicket(
     status: normalizeStatus((dataRec.review_status as string) ?? null) as ReviewTicket['status'],
     createdAt: data.created_at ?? new Date().toISOString(),
     slaRemainingMin: computeSlaMinutes((dataRec.requireSolveTime__c as string) ?? null),
-    reviewer: '',
+    reviewer: getCurrentUserName(),
     version: data.version,
     fields,
     anomalies,

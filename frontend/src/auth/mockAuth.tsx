@@ -13,6 +13,7 @@ const MOCK_USER = {
 };
 
 export const mockAuthValue: AuthContextValue = {
+  initializing: false,
   authenticated: true,
   user: MOCK_USER,
   token: 'dev-token',

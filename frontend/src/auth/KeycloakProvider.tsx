@@ -7,18 +7,10 @@ import {
   type ReactNode,
 } from 'react';
 import keycloak from './keycloak';
-
-export interface AuthUser {
-  sub: string;
-  preferred_username: string;
-  name: string;
-  email: string;
-  department_code: string;
-  department_name: string;
-  roles: string[];
-}
+import { type AuthUser, parseUserFromToken } from './parseUser';
 
 export interface AuthContextValue {
+  initializing: boolean;
   authenticated: boolean;
   user: AuthUser | null;
   token: string | null;
@@ -29,30 +21,12 @@ export interface AuthContextValue {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-function parseUser(token: string): AuthUser {
-  // JWT 使用 base64url 编码（- _ 无 padding），atob 只认标准 base64
-  const base64 = token.split('.')[1]
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const payload = JSON.parse(atob(base64));
-  const roles: string[] =
-    payload.resource_access?.['shouhou-gongdan-api']?.roles ?? [];
-  return {
-    sub: payload.sub ?? '',
-    preferred_username: payload.preferred_username ?? '',
-    name: payload.name ?? '',
-    email: payload.email ?? '',
-    department_code: payload.department_code ?? '',
-    department_name: payload.department_name ?? '',
-    roles,
-  };
-}
-
 interface Props {
   children: ReactNode;
 }
 
 export function KeycloakProvider({ children }: Props) {
+  const [initializing, setInitializing] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -69,7 +43,7 @@ export function KeycloakProvider({ children }: Props) {
         .then((refreshed) => {
           if (refreshed && keycloak.token) {
             setToken(keycloak.token);
-            setUser(parseUser(keycloak.token));
+            setUser(parseUserFromToken(keycloak.token));
           }
         })
         .catch(() => {
@@ -94,12 +68,15 @@ export function KeycloakProvider({ children }: Props) {
         if (auth && keycloak.token) {
           setAuthenticated(true);
           setToken(keycloak.token);
-          setUser(parseUser(keycloak.token));
+          setUser(parseUserFromToken(keycloak.token));
           startTokenRefresh();
         }
       })
       .catch((err) => {
         console.error('Keycloak init failed:', err);
+      })
+      .finally(() => {
+        setInitializing(false);
       });
 
     return () => {
@@ -133,6 +110,7 @@ export function KeycloakProvider({ children }: Props) {
   );
 
   const value: AuthContextValue = {
+    initializing,
     authenticated,
     user,
     token,

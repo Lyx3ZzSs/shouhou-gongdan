@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AutoSaveIndicator } from './primitives/AutoSaveIndicator';
 import { useReviewStore } from '../store/useReviewStore';
+import { useAuth } from '../../auth';
 
 interface Props { onNavigateStats: () => void }
 
@@ -23,6 +24,7 @@ export function WorkbenchHeader({ onNavigateStats }: Props) {
   const autoSaveStatus = useReviewStore((s) => s.autoSaveStatus);
   const setFilters = useReviewStore((s) => s.setFilters);
   const keyword = useReviewStore((s) => s.filters.keyword);
+  const { user, logout } = useAuth();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4">
@@ -60,19 +62,19 @@ export function WorkbenchHeader({ onNavigateStats }: Props) {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary ring-2 ring-primary/20 shadow-sm">
-              张
+              {user?.name?.charAt(0) ?? '?'}
             </span>
-            <span className="text-sm">张三</span>
+            <span className="text-sm">{user?.name ?? '未知用户'}</span>
             <ChevronDown className="h-3.5 w-3.5 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuLabel>客户服务部 · 张三</DropdownMenuLabel>
+          <DropdownMenuLabel>{user?.department_name ?? ''} · {user?.name ?? ''}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem>个人设置</DropdownMenuItem>
           <DropdownMenuItem onClick={onNavigateStats}>审核统计</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive">退出登录</DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive" onClick={logout}>退出登录</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </header>

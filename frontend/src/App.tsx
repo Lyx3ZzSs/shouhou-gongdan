@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, LogIn } from 'lucide-react';
+import { ShieldCheck, LogIn, Loader2 } from 'lucide-react';
 import { KeycloakProvider, MockAuthProvider } from './auth';
 import { useAuth } from './auth';
 import { authEnabled } from './auth/keycloak';
@@ -11,8 +11,33 @@ import { viewTransition } from '@/lib/animations';
 type View = 'workbench' | 'stats';
 
 function AppContent() {
-  const { authenticated, login } = useAuth();
+  const { initializing, authenticated, login } = useAuth();
   const [view, setView] = useState<View>('workbench');
+
+  if (initializing) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-app">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-primary/3 blur-3xl" />
+        </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="relative flex flex-col items-center gap-4"
+        >
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20">
+            <ShieldCheck className="h-7 w-7 text-primary" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-transparent">
+            售后工单审核工作台
+          </h1>
+          <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+        </motion.div>
+      </div>
+    );
+  }
 
   if (!authenticated) {
     return (

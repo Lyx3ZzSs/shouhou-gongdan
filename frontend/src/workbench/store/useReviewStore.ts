@@ -22,6 +22,7 @@ import {
   DEFAULT_SAVED_VIEWS,
 } from '../lib/constants';
 import { valuesEqual } from '../lib/format';
+import { getCurrentUserName } from '../../auth/parseUser';
 import { CONFLICT_DEMO } from '../mock/mockData';
 import {
   fetchWorkOrderList,
@@ -436,7 +437,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           id: uid('al'),
           timestamp: ts,
           category: 'field_change',
-          actor: '张三',
+          actor: getCurrentUserName(),
           action: reverted ? `重置「${field.name}」` : `修改「${field.name}」`,
           detail: undefined,
         },
@@ -472,7 +473,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           id: uid('al'),
           timestamp: ts,
           category: 'field_change',
-          actor: '张三',
+          actor: getCurrentUserName(),
           action: `重置「${field.name}」为系统原始值`,
         },
         ...s.auditLogs,
@@ -550,7 +551,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
             id: uid('al'),
             timestamp: new Date().toISOString(),
             category: 'process',
-            actor: '张三',
+            actor: getCurrentUserName(),
             action: '暂存审核进度',
           },
           ...s.auditLogs,
@@ -596,7 +597,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       id: uid('al'),
       timestamp: ts,
       category: 'process' as const,
-      actor: '客服坐席',
+      actor: getCurrentUserName(),
       action: decisionLabel[decision],
       detail: notes ? `备注：${notes}` : undefined,
     };

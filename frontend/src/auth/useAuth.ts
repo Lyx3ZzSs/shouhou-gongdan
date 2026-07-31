@@ -12,4 +12,4 @@ export function useAuth(): AuthContextValue {
   throw new Error('useAuth must be used within a KeycloakProvider or MockAuthProvider');
 }
 
-export type { AuthUser } from './KeycloakProvider';
+export type { AuthUser } from './parseUser';
