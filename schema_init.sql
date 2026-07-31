@@ -1,12 +1,8 @@
 -- ============================================================================
 -- 售后工单审核系统 — PostgreSQL 初始化 DDL
 --
--- 与 ORM 模型严格同步（backend/app/models/）：
---   workorder_review  → WorkOrderReview
---   workorder_audit_log → WorkOrderAuditLog
---   bad_case_sample   → BadCaseSample
---   workorder_stash   → WorkOrderStash
---   v_ticket          → VTicket（视图，依赖外部表）
+-- 与 ORM 模型严格同步（backend/app/models/），并从实际数据库导出验证。
+-- 覆盖 public 和 ticket_source 两个 schema。
 --
 -- 用法: psql -h localhost -U postgres -d shouhou_gongdan -f schema_init.sql
 -- ============================================================================
@@ -14,14 +10,125 @@
 BEGIN;
 
 -- ============================================================================
--- 1. workorder_review — 审核元数据表
+-- Schema: ticket_source — 工单原始数据（外部系统/source of truth）
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS workorder_review (
-    -- 主键（与 ticket_source.ticket.id 对应）
-    id                      VARCHAR(64)     PRIMARY KEY,
+CREATE SCHEMA IF NOT EXISTS ticket_source;
 
-    -- 关联键（关联 ticket_source.ticket.ticket_no，非 DB FK）
-    ticket_no               VARCHAR(100)    NOT NULL UNIQUE,
+-- ----------------------------------------------------------------------------
+-- ticket_source.wechat_user — 微信用户
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ticket_source.wechat_user (
+    user_id     BIGINT          NOT NULL,
+    nick_name   VARCHAR(64)     NOT NULL,
+    source      VARCHAR(64)     NOT NULL,
+    CONSTRAINT wechat_user_pkey PRIMARY KEY (user_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- ticket_source.source_message — 消息来源
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ticket_source.source_message (
+    id          BIGINT          NOT NULL,
+    user_id     BIGINT          NOT NULL REFERENCES ticket_source.wechat_user (user_id),
+    source      VARCHAR(64)     NOT NULL,
+    content     TEXT            NULL,
+    CONSTRAINT source_message_pkey PRIMARY KEY (id)
+);
+
+-- ----------------------------------------------------------------------------
+-- ticket_source.project_info — 项目信息
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ticket_source.project_info (
+    "caseAccountId"         VARCHAR(64)     NOT NULL,
+    "custLevel1__c"         VARCHAR(32)     NULL,
+    "projectName__c"        VARCHAR(255)    NULL,
+    "projectProvince__c"    VARCHAR(64)     NULL,
+    "bigCustShortName__c"   VARCHAR(128)    NULL,
+    "serviceCycleStart__c"  VARCHAR(32)     NULL,
+    "serviceCycleEnd__c"    VARCHAR(32)     NULL,
+    "isOfflineApply__c"     VARCHAR(4)      NULL,
+    "isOverdueService__c"   VARCHAR(4)      NULL,
+    CONSTRAINT project_info_pkey PRIMARY KEY ("caseAccountId")
+);
+
+-- ----------------------------------------------------------------------------
+-- ticket_source.ticket — 工单业务数据（销售易 serviceCase API 字段）
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ticket_source.ticket (
+    id                      BIGINT          NOT NULL,
+    ticket_no               VARCHAR(100)    NOT NULL,
+    source_id               BIGINT          NULL REFERENCES ticket_source.source_message (id),
+
+    -- 销售易 required fields
+    "ownerId"               VARCHAR(64)     NULL,
+    "dimDepart"             VARCHAR(128)    NULL,
+    "entityType"            VARCHAR(32)     NULL DEFAULT '11010045500001',
+    name                    VARCHAR(255)    NULL,
+    "caseSource"            VARCHAR(32)     NULL,
+    "feedbackChannel__c"    VARCHAR(32)     NULL,
+    "workOrderStatus__c"    VARCHAR(32)     NULL,
+    "caseDescription"       TEXT            NULL,
+    "caseStatus"            VARCHAR(16)     NULL,
+
+    -- 销售易 optional fields
+    "caseAccountId"         VARCHAR(64)     NULL,
+    "custLevel1__c"         VARCHAR(32)     NULL,
+    "projectName__c"        VARCHAR(255)    NULL,
+    "projectProvince__c"    VARCHAR(64)     NULL,
+    "bigCustShortName__c"   VARCHAR(128)    NULL,
+    "serviceCycleStart__c"  VARCHAR(32)     NULL,
+    "serviceCycleEnd__c"    VARCHAR(32)     NULL,
+    "isOfflineApply__c"     VARCHAR(4)      NULL,
+    "isOverdueService__c"   VARCHAR(4)      NULL,
+    "problemLevel__c"       VARCHAR(32)     NULL,
+    "problemType1__c"       VARCHAR(32)     NULL,
+    "problemType2__c"       VARCHAR(64)     NULL,
+    "problemType3__c"       VARCHAR(64)     NULL,
+    "feedbackCount__c"      VARCHAR(16)     NULL,
+    "problemResponsible__c" VARCHAR(64)     NULL,
+    "problemDept__c"        VARCHAR(128)    NULL,
+    "feedbackUserName__c"   VARCHAR(64)     NULL,
+    "feedbackUserContact__c" VARCHAR(16)    NULL,
+    "needCallBack__c"       VARCHAR(4)      NULL,
+    "isHandled__c"          VARCHAR(4)      NULL,
+    "needOnSite__c"         VARCHAR(4)      NULL,
+    remark__c               TEXT            NULL,
+    "relatedAttachment__c"  VARCHAR(255)    NULL,
+    "planFeedbackTime__c"   VARCHAR(32)     NULL,
+    "requireSolveTime__c"   VARCHAR(32)     NULL,
+
+    -- 销售易 hidden field
+    "defectFlag__c"         VARCHAR(4)      NULL DEFAULT '1',
+
+    CONSTRAINT ticket_pkey PRIMARY KEY (id),
+    CONSTRAINT ticket_ticket_no_key UNIQUE (ticket_no)
+);
+
+-- ----------------------------------------------------------------------------
+-- ticket_source.ticket_attachment — 工单附件
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ticket_source.ticket_attachment (
+    id          BIGINT          NOT NULL,
+    ticket_id   BIGINT          NULL,
+    source_id   BIGINT          NOT NULL,
+    file_name   VARCHAR(255)    NULL,
+    file_path   TEXT            NULL,
+    CONSTRAINT ticket_attachment_pkey PRIMARY KEY (id)
+);
+
+-- ============================================================================
+-- Schema: public — 审核系统核心表
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- public.workorder_review — 审核元数据表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.workorder_review (
+    -- 主键（与 ticket_source.ticket.id 对应）
+    id                      VARCHAR(64)     NOT NULL,
+
+    -- 关联键（关联 ticket_source.ticket.ticket_no）
+    ticket_no               VARCHAR(100)    NOT NULL,
 
     -- 乐观锁版本号
     version                 INTEGER         NOT NULL DEFAULT 1,
@@ -59,14 +166,17 @@ CREATE TABLE IF NOT EXISTS workorder_review (
     initiator_department    VARCHAR(128)    NULL,
 
     -- 时间戳
-    created_at              TIMESTAMP       NOT NULL,
-    updated_at              TIMESTAMP       NOT NULL
+    created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT workorder_review_pkey PRIMARY KEY (id),
+    CONSTRAINT workorder_review_ticket_no_key UNIQUE (ticket_no)
 );
 
--- ============================================================================
--- 2. workorder_audit_log — 审核审计日志表
--- ============================================================================
-CREATE TABLE IF NOT EXISTS workorder_audit_log (
+-- ----------------------------------------------------------------------------
+-- public.workorder_audit_log — 审核审计日志表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.workorder_audit_log (
     id              BIGSERIAL       PRIMARY KEY,
     workorder_id    VARCHAR(64)     NOT NULL,
     session_id      VARCHAR(64)     NOT NULL,
@@ -81,18 +191,18 @@ CREATE TABLE IF NOT EXISTS workorder_audit_log (
     operated_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_workorder    ON workorder_audit_log (workorder_id);
-CREATE INDEX IF NOT EXISTS idx_session      ON workorder_audit_log (session_id);
-CREATE INDEX IF NOT EXISTS idx_operator     ON workorder_audit_log (operator_id);
-CREATE INDEX IF NOT EXISTS idx_operated_at  ON workorder_audit_log (operated_at);
+CREATE INDEX IF NOT EXISTS idx_workorder    ON public.workorder_audit_log (workorder_id);
+CREATE INDEX IF NOT EXISTS idx_session      ON public.workorder_audit_log (session_id);
+CREATE INDEX IF NOT EXISTS idx_operator     ON public.workorder_audit_log (operator_id);
+CREATE INDEX IF NOT EXISTS idx_operated_at  ON public.workorder_audit_log (operated_at);
 
--- ============================================================================
--- 3. bad_case_sample — AI 审核坏例样本表
--- ============================================================================
-CREATE TABLE IF NOT EXISTS bad_case_sample (
+-- ----------------------------------------------------------------------------
+-- public.bad_case_sample — AI 审核坏例样本表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.bad_case_sample (
     id              BIGSERIAL       PRIMARY KEY,
     workorder_id    VARCHAR(64)     NOT NULL,
-    audit_log_id    BIGINT          NOT NULL REFERENCES workorder_audit_log (id),
+    audit_log_id    BIGINT          NOT NULL REFERENCES public.workorder_audit_log (id),
     field_path      VARCHAR(128)    NOT NULL,
     ai_value        TEXT            NULL,
     human_value     TEXT            NULL,
@@ -102,14 +212,14 @@ CREATE TABLE IF NOT EXISTS bad_case_sample (
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_bcs_status    ON bad_case_sample (sample_status);
-CREATE INDEX IF NOT EXISTS idx_bcs_workorder ON bad_case_sample (workorder_id);
-CREATE INDEX IF NOT EXISTS idx_bcs_audit_log ON bad_case_sample (audit_log_id);
+CREATE INDEX IF NOT EXISTS idx_bcs_status    ON public.bad_case_sample (sample_status);
+CREATE INDEX IF NOT EXISTS idx_bcs_workorder ON public.bad_case_sample (workorder_id);
+CREATE INDEX IF NOT EXISTS idx_bcs_audit_log ON public.bad_case_sample (audit_log_id);
 
--- ============================================================================
--- 4. workorder_stash — 审核进度暂存表
--- ============================================================================
-CREATE TABLE IF NOT EXISTS workorder_stash (
+-- ----------------------------------------------------------------------------
+-- public.workorder_stash — 审核进度暂存表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.workorder_stash (
     id              BIGSERIAL       PRIMARY KEY,
     workorder_id    VARCHAR(64)     NOT NULL UNIQUE,
     field_states    JSONB           NOT NULL DEFAULT '{}'::jsonb,
@@ -119,59 +229,52 @@ CREATE TABLE IF NOT EXISTS workorder_stash (
 );
 
 -- ============================================================================
--- 5. v_ticket — 工单业务数据视图（只读）
+-- public.v_ticket — 工单业务数据视图（只读）
 --
--- ⚠️ 外部依赖：此视图依赖以下外部表，需确保它们在数据库中已存在：
---   - ticket_source.ticket   (ticket_no, 及所有销售易 __c 业务字段)
---   - project_info            (caseAccountId, custLevel1__c, projectName__c, ...)
---
--- 视图结构对照 ORM 模型 VTicket（backend/app/models/ticket.py），
--- 提供 ticket_source.ticket LEFT JOIN project_info 的统一查询入口。
--- 审核模块所有业务字段读取均通过此视图。
+-- 从 ticket_source.ticket LEFT JOIN ticket_source.project_info 构建，
+-- 提供审核模块统一的工单业务数据查询入口。
 -- ============================================================================
-
--- 以下为视图预期结构（列名与 ORM 模型一致），实际创建时请根据
--- ticket_source.ticket 和 project_info 的实际列名调整 SELECT 映射。
---
--- CREATE OR REPLACE VIEW v_ticket AS
--- SELECT
---     t.id,
---     t.ticket_no,
---     t."ownerId",
---     t."dimDepart",
---     t."entityType",
---     t."name",
---     t."caseSource",
---     t."feedbackChannel__c",
---     t."workOrderStatus__c",
---     t."caseDescription",
---     t."caseStatus",
---     t."problemLevel__c",
---     t."feedbackUserContact__c",
---     t."feedbackUserName__c",
---     t."problemResponsible__c",
---     t."problemDept__c",
---     t."problemType1__c",
---     t."problemType2__c",
---     t."problemType3__c",
---     t."feedbackCount__c",
---     t."needCallBack__c",
---     t."isHandled__c",
---     t."needOnSite__c",
---     t."remark__c",
---     t."planFeedbackTime__c",
---     t."requireSolveTime__c",
---     t."defectFlag__c",
---     p."caseAccountId",
---     p."custLevel1__c",
---     p."projectName__c",
---     p."projectProvince__c",
---     p."bigCustShortName__c",
---     p."serviceCycleStart__c",
---     p."serviceCycleEnd__c",
---     p."isOfflineApply__c",
---     p."isOverdueService__c"
--- FROM ticket_source.ticket t
--- LEFT JOIN project_info p ON t.project_id = p.id;
+CREATE OR REPLACE VIEW public.v_ticket AS
+SELECT
+    t.id,
+    t.ticket_no,
+    t."ownerId",
+    t."dimDepart",
+    t."entityType",
+    t.name,
+    t."caseSource",
+    t."feedbackChannel__c",
+    t."workOrderStatus__c",
+    t."caseDescription",
+    t."caseStatus",
+    t."problemLevel__c",
+    t."problemType1__c",
+    t."problemType2__c",
+    t."problemType3__c",
+    t."feedbackCount__c",
+    t."problemResponsible__c",
+    t."problemDept__c",
+    t."feedbackUserName__c",
+    t."feedbackUserContact__c",
+    t."needCallBack__c",
+    t."isHandled__c",
+    t."needOnSite__c",
+    t.remark__c,
+    t."relatedAttachment__c",
+    t."planFeedbackTime__c",
+    t."requireSolveTime__c",
+    t."defectFlag__c",
+    pi."caseAccountId",
+    pi."custLevel1__c",
+    pi."projectName__c",
+    pi."projectProvince__c",
+    pi."bigCustShortName__c",
+    pi."serviceCycleStart__c",
+    pi."serviceCycleEnd__c",
+    pi."isOfflineApply__c",
+    pi."isOverdueService__c"
+FROM ticket_source.ticket t
+LEFT JOIN ticket_source.project_info pi
+    ON t."caseAccountId"::text = pi."caseAccountId"::text;
 
 COMMIT;
