@@ -1,93 +1,184 @@
-# after_sales
+# 售后工单审核工作台
 
+> **AI 售后智能服务一体化平台** 的子项目 — 负责 AI 生成工单的人工审核与修正回流。
 
+## 项目背景
 
-## Getting started
+新能源行业售后服务渠道碎片化（400 电话、企业微信、邮件、小程序），业务复杂度高（算法、气象、考核规则），跨部门协同频繁，工单量已超出人工处理能力。
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+"AI 售后智能服务一体化平台"通过 AI 自动生成受理单 + 人工审核确认的协作模式，提升工单处理效率与质量。**本项目为其中的人工审核工作台部分**，核心职责是：
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- 提供三栏式专业审核界面，供客服坐席逐字段审核 AI 生成的工单
+- 将人工修正数据通过 Bad Case 回流机制反哺 AI 模型，形成持续优化闭环
 
-## Add your files
+## 功能概览
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### 工单审核工作台（前端）
+
+三栏式专业审核界面，支持客服人员高效审核 AI 生成的工单：
+
+| 区域 | 功能 |
+|------|------|
+| **左侧队列** | 待审核工单列表，支持筛选、排序、SLA 时效倒计时 |
+| **中间工作区** | 24 个字段分 8 组展示，diff 对比视图，行内编辑，逐字段确认 |
+| **右侧控制台** | 审核进度、当前变更、备注记录 |
+
+**交互特性：**
+- 键盘快捷键全程操作（J/K 导航、Cmd+Enter 提交、Cmd+S 暂存等）
+- 字段级异常高亮（阻断/告警/建议），一键跳转定位
+- Diff 对比视图（原值 → 现值），hover 显示操作按钮
+- 密度模式切换（标准/紧凑），响应式布局适配小屏
+- 分布式编辑锁防并发冲突，版本冲突检测与提醒
+- 自动暂存草稿，切换工单未保存提醒
+
+### 审核后端服务
+
+- **工单审核** — 确认/驳回双分支，乐观锁版本控制，幂等防重
+- **字段级审计日志** — 记录每次字段变更的修改人、修改原因、前后值
+- **Bad Case 回流** — 人工修正的字段自动入库，用于 AI 模型持续训练
+- **分布式编辑锁** — Redis 原子操作，5 分钟 TTL 自动释放，心跳续期
+- **JWT 认证与角色鉴权** — 客服专员角色限制
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| **后端框架** | Python 3 + FastAPI |
+| **ORM** | SQLAlchemy 2.0 (async) |
+| **数据库** | PostgreSQL 16 (开发/生产统一) |
+| **缓存** | Redis 7+ (分布式锁) |
+| **前端框架** | React 18 + TypeScript 5 |
+| **构建工具** | Vite 5 |
+| **样式方案** | Tailwind CSS 3.4 + shadcn/ui 组件 |
+| **状态管理** | Zustand 5 |
+| **UI 原语** | Radix UI (无障碍组件) |
+| **测试** | pytest (后端) + Vitest (前端) |
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.10+
+- Node.js 18+
+- Docker Compose（用于启动 PostgreSQL + Redis）
+
+### 后端
+
+```bash
+# 1. 启动基础设施（PostgreSQL + Redis）
+docker compose up -d
+
+# 2. 初始化 Python 环境
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. 初始化数据库表结构
+#    首次运行：alembic stamp head（docker compose 已通过 schema_init.sql 创建表）
+#    后续增量迁移：alembic upgrade head
+alembic stamp head
+
+# 4. 启动服务 (端口 8093)
+python -m app.main
+# 或: uvicorn app.main:app --reload --port 8093
+```
+
+### 前端
+
+```bash
+cd frontend
+npm install
+
+# 启动开发服务器 (端口 5193)
+npm run dev
+```
+
+Vite 自动将 `/api` 代理到 `http://localhost:8093`。
+
+### 生成 API 类型
+
+```bash
+# 后端生成 OpenAPI spec
+cd backend && python scripts/generate_openapi.py
+
+# 前端生成 TypeScript 类型
+cd ../frontend && npm run generate-types
+```
+
+### 运行测试
+
+```bash
+# 后端
+cd backend && pytest
+
+# 前端
+cd frontend && npx vitest run
+
+# TypeScript 类型检查
+cd frontend && npm run typecheck
+```
+
+## 项目结构
 
 ```
-cd existing_repo
-git remote add origin http://10.8.6.32:8080/ai_team/after_sales.git
-git branch -M main
-git push -uf origin main
+├── backend/
+│   ├── app/
+│   │   ├── auth/             # JWT 认证与角色鉴权
+│   │   ├── core/             # 配置、数据库连接
+│   │   ├── models/           # SQLAlchemy ORM 模型
+│   │   ├── routers/          # FastAPI 路由 (review, lock)
+│   │   ├── schemas/          # Pydantic 请求/响应模型
+│   │   └── services/         # 业务逻辑 (审核、锁、审计、Bad Case)
+│   ├── tests/                # pytest 测试套件
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── workbench/        # 审核工作台 (新)
+│   │   │   ├── components/   # UI 组件
+│   │   │   │   ├── queue/    # 左侧队列面板
+│   │   │   │   ├── workspace/# 中间审核工作区
+│   │   │   │   ├── sidebar/  # 右侧控制台
+│   │   │   │   └── primitives/# 基础 UI 组件
+│   │   │   ├── hooks/        # 自定义 Hooks
+│   │   │   ├── store/        # Zustand 状态管理
+│   │   │   ├── lib/          # 工具函数、常量
+│   │   │   ├── mock/         # Mock 数据
+│   │   │   └── types.ts      # 类型定义
+│   │   ├── pages/            # 旧版页面 (保留)
+│   │   ├── api/              # API 客户端
+│   │   ├── components/       # shadcn/ui 基础组件
+│   │   └── lib/              # 通用工具
+│   ├── tests/                # Vitest 测试
+│   └── package.json
+└── docs/                     # 项目文档
 ```
 
-## Integrate with your tools
+## API 端点
 
-* [Set up project integrations](http://10.8.6.32:8080/ai_team/after_sales/-/settings/integrations)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/workorders` | 工单列表（前 50 条） |
+| `GET` | `/api/workorders/{id}` | 工单详情 |
+| `POST` | `/api/workorders/{id}/review` | 提交审核（确认/驳回） |
+| `GET` | `/api/workorders/{id}/audit-logs` | 审核日志 |
+| `POST` | `/api/workorders/{id}/lock` | 获取编辑锁 |
+| `DELETE` | `/api/workorders/{id}/lock` | 释放编辑锁 |
+| `PUT` | `/api/workorders/{id}/lock` | 锁心跳续期 |
 
-## Collaborate with your team
+## 架构决策
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- **三栏布局** — 队列 → 审核区 → 控制台，适配复杂工单的字段级审核需求
+- **乐观锁** — 版本号防并发提交，冲突时提示用户刷新
+- **锁 release 始终在 finally 中执行** — 防止孤儿锁阻塞队列
+- **三层数据管线** — `API 获取 → 领域转换 → Store 消费`，类比 React Query `select` 模式
+- **Mock 数据驱动开发** — 工作台可脱离后端独立运行和演示
+- **Zustand selector 不返回新对象** — `filter()`/`map()` 在 selector 中会导致无限重渲染，派生数据统一在 `useMemo` 钩子中计算
 
-## Test and Deploy
+## 相关文档
 
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- [用户操作手册](docs/用户操作手册.md)
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Copyright © 国能日新科技股份有限公司. All rights reserved.

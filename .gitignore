@@ -1,0 +1,17 @@
+# Project docs (large files, not code)
+AI售后智能服务一体化平台需求资料/
+
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.db
+
+# Backend environment (contains secrets)
+backend/.env
+
+# Node / Frontend
+node_modules/
+dist/
