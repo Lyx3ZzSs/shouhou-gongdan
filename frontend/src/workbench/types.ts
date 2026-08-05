@@ -100,7 +100,7 @@ export interface ReviewTicket {
   type: string;
   urgency: 'high' | 'medium' | 'low';
   source: string;
-  status: 'pending_review' | 'reviewing' | 'returned' | 'rejected' | 'approved';
+  status: 'pending_review' | 'reviewing' | 'returned' | 'rejected' | 'approved' | 'confirmed';
   createdAt: string;
   slaRemainingMin: number;
   reviewer: string;
@@ -128,7 +128,7 @@ export interface QueueItem {
   urgency: 'high' | 'medium' | 'low';
 }
 
-export type QueueItemStatus = 'pending_review' | 'reviewing' | 'returned' | 'stashed';
+export type QueueItemStatus = 'pending_review' | 'reviewing' | 'returned' | 'stashed' | 'confirmed';
 
 /** 版本冲突信息 */
 export interface ConflictInfo {

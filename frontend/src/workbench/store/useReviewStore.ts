@@ -33,6 +33,7 @@ import {
   fetchStashData,
   deleteStashData,
   ConflictError,
+  LockLostError,
 } from '../../api/review';
 import {
   workOrderSummaryToQueueItem,
@@ -157,7 +158,7 @@ interface ReviewStore {
   autoSaveStatus: AutoSaveStatus;
   conflict: ConflictInfo | null;
   beingEditedBy: string | null;
-  lockState: 'acquiring' | 'locked' | 'lost' | 'error';  // F2: 锁丢失强阻塞
+  lockState: 'acquiring' | 'locked' | 'lost' | 'error' | 'released';  // F2: 锁丢失强阻塞；released=提交成功后终态，锁已由后端释放
   dirty: boolean;
   pendingSwitchId: string | null;
   currentLoadId: number;  // F4: 切单竞态保护
@@ -402,6 +403,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     if (get().lockState === 'lost' || get().lockState === 'error') return;
     const { ticket, fieldStates } = get();
     if (!ticket) return;
+    // 已确认/已驳回的工单禁止继续编辑
+    if (ticket.status === 'confirmed' || ticket.status === 'rejected') return;
     const field = ticket.fields.find((f) => f.id === fieldId);
     if (!field) return;
     const prev = fieldStates[fieldId];
@@ -452,6 +455,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   resetField: (fieldId) => {
     const { ticket, fieldStates } = get();
     if (!ticket) return;
+    // 已确认/已驳回的工单禁止继续编辑
+    if (ticket.status === 'confirmed' || ticket.status === 'rejected') return;
     const field = ticket.fields.find((f) => f.id === fieldId);
     if (!field) return;
     const prev = fieldStates[fieldId];
@@ -523,6 +528,11 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     if (get().lockState === 'lost' || get().lockState === 'error') return;
     const { ticket, fieldStates, notes, queue, filters, selectedId } = get();
     if (!ticket) return;
+    // 已确认工单禁止暂存：后端 manual stash 会将 confirmed 回退为 stashed
+    if (ticket.status === 'confirmed') {
+      set({ error: '该工单已确认，不能暂存' });
+      return;
+    }
 
     set({ autoSaveStatus: 'saving' });
     try {
@@ -576,14 +586,24 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   closeSubmitDialog: () => set({ submitDialogOpen: false, submitting: false }),
 
   submit: async (decision, openNext) => {
-    // F2: 锁丢失/错误时禁止提交
+    // F2: 锁丢失/错误时禁止提交，关闭对话框避免用户困惑
     if (get().lockState === 'lost' || get().lockState === 'error') {
-      set({ error: '编辑锁已丢失或不可用，请刷新页面后重新审核' });
+      set({ submitDialogOpen: false, submitting: false, error: '编辑锁已丢失或不可用，请刷新页面后重新审核' });
+      return;
+    }
+    const { ticket, fieldStates, changeLog, queue, filters, selectedId, notes, sessionId } = get();
+    if (!ticket) return;
+    // 已确认工单禁止重复提交（避免触发后端 409/423）
+    if (ticket.status === 'confirmed') {
+      console.warn('[submit] 工单已确认，禁止重复提交:', ticket.id);
+      set({
+        submitting: false,
+        submitDialogOpen: false,
+        error: '该工单已确认，不能重复提交',
+      });
       return;
     }
     set({ submitting: true, error: null });
-    const { ticket, fieldStates, changeLog, queue, filters, selectedId, notes, sessionId } = get();
-    if (!ticket) return;
 
     const decisionLabel: Record<ReviewDecision, string> = {
       approved: '确认通过',
@@ -634,7 +654,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       const apiChanges = effectiveChanges.map(changeRecordToFieldChange);
       const isReject = decision === 'rejected';
 
-      await fetchConfirm(ticket.id, {
+      const confirmResp = await fetchConfirm(ticket.id, {
         session_id: sessionId,
         version: ticket.version,
         changes: apiChanges,
@@ -648,12 +668,20 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       const idx = list.findIndex((i) => i.id === selectedId);
       const nextItem = list[idx + 1] ?? list[idx - 1] ?? null;
       const remainingQueue = queue.filter((i) => i.id !== selectedId);
+      // 提交成功回写工单状态与版本。停留当前工单（未进入下一条）时置
+      // lockState='released'：锁已由后端释放，停掉心跳，避免 2 分钟后误报锁丢失。
+      const decidedStatus = confirmResp.status === 'rejected' ? 'rejected' : 'confirmed';
+      const staying = !(openNext && nextItem);
 
       set((s) => ({
         auditLogs: [newAudit, ...s.auditLogs],
         submitting: false,
         submitDialogOpen: false,
         dirty: false,
+        ticket: s.ticket
+          ? { ...s.ticket, status: decidedStatus, version: s.ticket.version + 1 }
+          : s.ticket,
+        lockState: staying ? 'released' : s.lockState,
         submittedToast:
           openNext && nextItem
             ? `${decisionLabel[decision]}，已进入下一条工单`
@@ -671,19 +699,30 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         set({ queue: remainingQueue });
       }
     } catch (e) {
+      console.error('[submit] 提交异常:', e instanceof ConflictError ? 'ConflictError' : e instanceof LockLostError ? 'LockLostError' : 'Unknown', e);
       if (e instanceof ConflictError) {
         set({
           submitting: false,
           submitDialogOpen: false,
           conflict: {
             otherUser: '其他审核人',
-            theirVersion: ticket.version + 1,
+            theirVersion: e.version ?? ticket.version + 1,
             theirChanges: [],
           },
         });
-      } else {
+      } else if (e instanceof LockLostError) {
+        // 423：编辑锁已失效 —— 标记锁丢失（StickyDecisionBar 显示 pill 引导刷新），
+        // 不设置 error 避免触发全屏错误，保持轻量提示
         set({
           submitting: false,
+          submitDialogOpen: false,
+          lockState: 'lost',
+        });
+      } else {
+        console.error('[submit] 提交失败:', e);
+        set({
+          submitting: false,
+          submitDialogOpen: false,
           error: `提交失败: ${(e as Error).message}`,
         });
       }
@@ -703,11 +742,24 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       set({ ticketLoading: true });
       try {
         const latest = await fetchWorkOrder(id!);
+        const latestRec = latest as Record<string, unknown>;
+        // 服务端工单已被他人确认/驳回：无法合并，从队列移除并明确提示
+        const latestStatus = latestRec.review_status as string | null;
+        if (latestStatus === 'confirmed' || latestStatus === 'rejected') {
+          set((s) => ({
+            conflict: null,
+            ticketLoading: false,
+            ticket: null,
+            queue: s.queue.filter((i) => i.id !== id),
+            queueEmpty: s.queue.length <= 1,
+            error: `该工单已被他人${latestStatus === 'confirmed' ? '确认' : '驳回'}，无法合并你的修改，工单已从队列移除`,
+          }));
+          return;
+        }
         const latestTicket = workOrderDataToReviewTicket(latest, get().auditLogs);
         const latestFields = new Map(latestTicket.fields.map((f) => [f.id, f.originalValue]));
         set((s) => {
           if (!s.ticket) return { conflict: null, ticketLoading: false };
-          const mergedVersion = (s.conflict?.theirVersion ?? s.ticket.version) + 1;
           const mergedFields = s.ticket.fields.map((f) => ({
             ...f,
             originalValue: latestFields.has(f.id) ? latestFields.get(f.id) : f.originalValue,
@@ -715,7 +767,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           return {
             conflict: null,
             ticketLoading: false,
-            ticket: { ...s.ticket, version: mergedVersion, fields: mergedFields },
+            // 以服务端最新 version 为准，避免合并后仍带旧版本号再次 409
+            ticket: { ...s.ticket, version: latest.version, fields: mergedFields },
           };
         });
       } catch {
@@ -811,6 +864,8 @@ export function selectReviewProgress(state: ReviewStore): ReviewProgress {
 
 export function selectCanSubmit(state: ReviewStore): boolean {
   if (!state.ticket) return false;
+  // 已确认/已驳回的工单不可再提交
+  if (state.ticket.status === 'confirmed' || state.ticket.status === 'rejected') return false;
   return !state.ticket.anomalies.some(
     (a) => a.type === 'blocking_error' && !isAnomalyResolved(a, state.fieldStates),
   );

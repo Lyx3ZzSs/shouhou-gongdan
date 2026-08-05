@@ -28,7 +28,12 @@ class Settings(BaseSettings):
     XIAOSHOUYI_USERNAME: str = ""
     XIAOSHOUYI_PASSWORD: SecretStr = SecretStr("")
     XIAOSHOUYI_SYNC_MAX_RETRIES: int = 3
-    XIAOSHOUYI_SYNC_TIMEOUT_SECONDS: float = 5.0
+    XIAOSHOUYI_SYNC_TIMEOUT_SECONDS: float = 20.0
+    XIAOSHOUYI_SYNC_MAX_CONCURRENCY: int = 5
+    # 周期扫描孤儿/滞留同步记录的间隔（秒）；0 表示禁用
+    XIAOSHOUYI_SWEEP_INTERVAL_SECONDS: float = 120.0
+    # 单次周期扫描最多恢复的记录数，防止积压时无界 fan-out
+    XIAOSHOUYI_SWEEP_MAX_PER_CYCLE: int = 50
 
 
 settings = Settings()

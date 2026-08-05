@@ -7,8 +7,10 @@
 Reference: docs/销售易服务工单接口文档.md
 """
 import asyncio
+import calendar
 import logging
 import time
+from datetime import datetime as dt
 from typing import Any
 
 import httpx
@@ -18,6 +20,80 @@ logger = logging.getLogger(__name__)
 
 # Token 提前刷新阈值（秒），提前 5 分钟刷新避免边界竞争
 _TOKEN_REFRESH_MARGIN = 300
+
+# API 文档中标注为"年月日时间戳"的字段（需从日期字符串转为 Unix 时间戳）
+_TIMESTAMP_FIELDS = {
+    "serviceCycleStart__c",
+    "serviceCycleEnd__c",
+    "planFeedbackTime__c",
+    "requireSolveTime__c",
+}
+
+# 可重试的 HTTP 状态码
+_RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
+
+# 可重试的网络异常类型
+_RETRYABLE_NETWORK_ERRORS = (
+    httpx.ConnectError, httpx.ReadError, httpx.ReadTimeout,
+    httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.PoolTimeout,
+)
+
+
+class XiaoShouYiError(RuntimeError):
+    """销售易 API 错误，携带可重试标记供调用方决策。"""
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+# API 文档明确要求的必填字段（独立于 field_config.yaml 的 UI 校验标记）
+_API_DOC_REQUIRED_FIELDS: set[str] = {
+    "ownerId", "dimDepart", "entityType", "name",
+    "caseAccountId", "projectName__c",
+    "problemResponsible__c", "problemDept__c",
+}
+
+
+def _load_required_fields() -> set[str]:
+    """加载 to_api_body() 始终发送的字段集合。
+
+    取 field_config.yaml 的 required_keys（UI 层必填）与 API 文档必填字段的
+    并集，确保任何一方标记为必填的字段都不会被 to_api_body() 过滤掉。
+    """
+    try:
+        from app.core.field_config import load_field_config
+        yaml_required = load_field_config().required_keys
+        return yaml_required | _API_DOC_REQUIRED_FIELDS
+    except Exception:
+        logger.warning("无法加载 field_config，使用 API 文档必填字段集合")
+        return _API_DOC_REQUIRED_FIELDS
+
+
+_REQUIRED_FIELDS: set[str] = _load_required_fields()
+
+
+def _normalize_timestamp(value: str) -> str:
+    """将日期字符串转为 Unix 时间戳字符串。
+
+    销售易 API 的"年月日时间戳"字段期望 Unix epoch 秒数（如 "1784797500"），
+    但 v_ticket 视图中可能存储 YYYY-MM-DD 格式字符串，此处做兼容转换。
+    如果已经是纯数字时间戳则原样返回。
+    """
+    if not value or not value.strip():
+        return ""
+    value = value.strip()
+    # 已经是纯数字时间戳，直接返回
+    if value.isdigit():
+        return value
+    # 尝试解析为日期字符串 → 转为时间戳（当天 00:00:00 UTC）
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d"):
+        try:
+            d = dt.strptime(value, fmt)
+            return str(calendar.timegm(d.utctimetuple()))
+        except ValueError:
+            continue
+    logger.warning("无法解析时间戳字段值 %r，原样发送", value)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -69,24 +145,33 @@ class CreateWorkOrderRequest(BaseModel):
     defectFlag__c: str = "1"
 
     def to_api_body(self) -> dict[str, Any]:
-        """转为 API JSON body，空字符串的 optional 字段会被排除。
+        """转为 API JSON body。
 
-        idempotency_key 以 idempotencyKey__c 自定义字段发送（__c 后缀符合
-        销售易 Salesforce 风格 API 约定）。注意：销售易是否支持此字段去重尚
-        未确认，当前属于尽力而为；真正的幂等保证来自本地原子认领机制。
+        - 所有已知字段始终发送（空值发空字符串），避免 API 因缺少字段而 NPE
+        - 时间戳字段自动从日期字符串转为 Unix 时间戳
+        - idempotency_key 以 idempotencyKey__c 自定义字段发送（__c 后缀
+          符合销售易 Salesforce 风格 API 约定）
         """
         data: dict[str, Any] = {"defectFlag__c": self.defectFlag__c}
 
-        # 幂等键以自定义字段发送（尽力而为，依赖销售易端支持）
+        # 幂等键以自定义字段发送
         if self.idempotency_key:
             data["idempotencyKey__c"] = self.idempotency_key
 
-        for field_name, field_info in self.model_fields.items():
+        for field_name in self.model_fields:
             if field_name in ("defectFlag__c", "idempotency_key"):
                 continue
             value = getattr(self, field_name)
-            if value != "" and value is not None:
-                data[field_name] = value
+
+            if value is None:
+                value = ""
+
+            # 所有字段始终发送，空值发空字符串
+            # （销售易 API 开发中，健壮性不足，字段缺失比空字符串更危险）
+            # 时间戳字段：自动将日期字符串转为 Unix 时间戳
+            if field_name in _TIMESTAMP_FIELDS and value != "":
+                value = _normalize_timestamp(value)
+            data[field_name] = value
 
         return data
 
@@ -183,6 +268,21 @@ class XiaoShouYiClient:
         self._token_expires_at: float = 0.0
         self._token_lock = asyncio.Lock()
 
+        # 共享 HTTP 客户端（延迟创建，复用连接池）
+        self._http: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """延迟创建共享 httpx 客户端，复用连接池减少 TCP/TLS 握手开销。"""
+        if self._http is None:
+            self._http = httpx.AsyncClient(timeout=None)  # 超时由调用方 asyncio.wait_for 控制
+        return self._http
+
+    async def close(self) -> None:
+        """关闭 HTTP 客户端连接池。"""
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
+
     # ------------------------------------------------------------------
     # Authentication
     # ------------------------------------------------------------------
@@ -204,20 +304,30 @@ class XiaoShouYiClient:
             "password": self._password,
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as http:
+        http = await self._get_client()
+        try:
             resp = await http.post(
                 self._token_url,
                 data=payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            resp.raise_for_status()
-            data = resp.json()
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            raise XiaoShouYiError(f"销售易 token 网络错误: {e}", retryable=True) from e
 
+        if resp.status_code >= 400:
+            retryable = resp.status_code in _RETRYABLE_HTTP_STATUS
+            raise XiaoShouYiError(
+                f"销售易 token HTTP {resp.status_code}", retryable=retryable,
+            )
+
+        data = resp.json()
         access_token = data.get("access_token", "")
         expires_in = data.get("expires_in", 86400)
 
         if not access_token:
-            raise RuntimeError(f"销售易 token 响应中缺少 access_token: {data}")
+            raise XiaoShouYiError(
+                f"销售易 token 响应中缺少 access_token: {data}", retryable=True,
+            )
 
         self._access_token = access_token
         self._token_expires_at = time.time() + expires_in
@@ -258,10 +368,12 @@ class XiaoShouYiClient:
         url = f"{self._base_url}/openapi/insertServiceCase"
         body = data.to_api_body()
 
+        t0 = time.monotonic()
         logger.info("销售易 create_work_order → %s", url)
         logger.debug("request body: %s", body)
 
-        async with httpx.AsyncClient(timeout=30.0) as http:
+        http = await self._get_client()
+        try:
             resp = await http.post(
                 url,
                 json=body,
@@ -270,34 +382,69 @@ class XiaoShouYiClient:
                     "Authorization": f"Bearer {token}",
                 },
             )
+        except _RETRYABLE_NETWORK_ERRORS as e:
+            raise XiaoShouYiError(f"销售易网络错误: {e}", retryable=True) from e
 
-        raw = resp.json() if resp.status_code < 500 else {}
+        elapsed_ms = round((time.monotonic() - t0) * 1000)
+
+        # 解析响应体：尝试 JSON，失败则保留原始文本用于排查
+        try:
+            raw = resp.json()
+        except Exception:
+            raw = {"_body": resp.text[:500]}
+
+        # 实际 API 响应格式: {"code": 200, "message": "成功", "data": {"code": 2000001, "dataId": ..., "success": true}}
+        # 文档中描述为:    {"code": "200", "msg": "OK", "data": {"id": ..., "objectApiKey": "serviceCase"}}
+        # 两者有差异，此处兼容实际 API 格式
         code = raw.get("code", "")
-        msg = raw.get("msg", "")
+        msg = raw.get("message") or raw.get("msg", "")
 
-        if resp.status_code >= 400 or code != "200":
+        if resp.status_code >= 400 or str(code) != "200":
             logger.error(
-                "销售易 create_work_order 失败: status=%d code=%s msg=%s body=%s",
-                resp.status_code, code, msg, raw,
+                "销售易 create_work_order 失败: status=%d code=%s msg=%s duration_ms=%d body=%s",
+                resp.status_code, code, msg, elapsed_ms, raw,
             )
-            raise RuntimeError(f"销售易同步失败 [{code}]: {msg}")
+            retryable = resp.status_code in _RETRYABLE_HTTP_STATUS
+            raise XiaoShouYiError(
+                f"销售易同步失败 [{code}]: {msg}", retryable=retryable,
+            )
 
-        external_id = raw.get("data", {}).get("id")
+        # 实际 API 返回的外部 ID 在 data.dataId（大整数），文档中为 data.id
+        data_block = raw.get("data", {})
+        external_id = data_block.get("dataId") or data_block.get("id")
         if isinstance(external_id, (int,)):
             external_id = str(external_id)
 
         logger.info(
-            "销售易 create_work_order 成功: external_id=%s objectApiKey=%s",
-            external_id,
-            raw.get("data", {}).get("objectApiKey", ""),
+            "销售易 create_work_order 成功: external_id=%s duration_ms=%d status=%d",
+            external_id, elapsed_ms, resp.status_code,
         )
         return CreateWorkOrderResponse(external_id=str(external_id) if external_id else None, raw=raw)
 
 
 # ---------------------------------------------------------------------------
-# Factory
+# Factory（进程级单例）
 # ---------------------------------------------------------------------------
 
+_client_instance: XiaoShouYiClient | None = None
+
+
 def get_xiaoshouyi_client() -> XiaoShouYiClient:
-    """工厂函数：创建销售易客户端实例。"""
-    return XiaoShouYiClient()
+    """获取进程级单例客户端。
+
+    共享 httpx 连接池 + token 缓存，避免每次同步新建客户端（连接池
+    不复用、token 每单重取，导致每次同步 2 次 HTTP 往返）。仅在应用
+    shutdown 时通过 close_xiaoshouyi_client() 关闭。
+    """
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = XiaoShouYiClient()
+    return _client_instance
+
+
+async def close_xiaoshouyi_client() -> None:
+    """关闭单例客户端（应用优雅关闭时调用）。"""
+    global _client_instance
+    if _client_instance is not None:
+        await _client_instance.close()
+        _client_instance = None

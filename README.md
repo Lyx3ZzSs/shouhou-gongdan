@@ -194,7 +194,7 @@ cd ../frontend && npm run generate-types
 | `ticket_source` | `wechat_user` | 微信用户 |
 | `ticket_source` | `ticket_attachment` | 工单附件 |
 
-完整 DDL 见根目录 `schema_init.sql`，与 ORM 模型严格同步。
+完整 DDL 见根目录 `schema_init.sql`，与 ORM 模型严格同步。**`schema_init.sql` 是唯一 DDL 权威**（`docker compose up` 启动时自动执行）；`backend/alembic/` 迁移为遗留、未参与部署（曾以 `alembic stamp head` 标记），新增/修改表结构请直接改 `schema_init.sql`。
 
 ## API 端点
 

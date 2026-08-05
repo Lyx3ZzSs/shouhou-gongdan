@@ -15,6 +15,7 @@ const STATUS_LABEL: Record<
   returned: { label: '已退回', variant: 'warning' },
   rejected: { label: '已驳回', variant: 'muted' },
   approved: { label: '已通过', variant: 'success' },
+  confirmed: { label: '已确认', variant: 'success' },
 };
 
 export function TicketReviewHeader() {

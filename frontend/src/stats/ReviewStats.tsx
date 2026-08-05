@@ -1,15 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, TrendingUp, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Clock, CheckCircle2, AlertCircle, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Line, Column, Pie } from '@antv/g2plot';
-import type { StatsOverview, TrendPoint, ReviewerStat, DurationBucket, StatusBucket } from './types';
+import type { StatsOverview, TrendPoint, ReviewerStat, DurationBucket, StatusBucket, FieldCorrection, EfficiencyPoint } from './types';
 import {
   fetchStatsOverview,
   fetchByReviewer,
   fetchTrends,
   fetchDurationDistribution,
   fetchStatusDistribution,
+  fetchFieldCorrections,
+  fetchEfficiency,
 } from '../api/stats';
 import { fadeInUp, staggerContainer, staggerItem } from '@/lib/animations';
 
@@ -94,11 +96,14 @@ export function ReviewStats({ onBack }: Props) {
   const [reviewers, setReviewers] = useState<ReviewerStat[]>([]);
   const [durations, setDurations] = useState<DurationBucket[]>([]);
   const [statuses, setStatuses] = useState<StatusBucket[]>([]);
+  const [corrections, setCorrections] = useState<FieldCorrection[]>([]);
+  const [efficiency, setEfficiency] = useState<EfficiencyPoint[]>([]);
 
   const trendRef = useRef<HTMLDivElement>(null);
   const reviewerRef = useRef<HTMLDivElement>(null);
   const durationRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
+  const effRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     Promise.all([
@@ -107,14 +112,41 @@ export function ReviewStats({ onBack }: Props) {
       fetchByReviewer(),
       fetchDurationDistribution(),
       fetchStatusDistribution(),
-    ]).then(([ov, tr, rv, dr, st]) => {
+      fetchFieldCorrections(15),
+      fetchEfficiency(12),
+    ]).then(([ov, tr, rv, dr, st, fc, eff]) => {
       setOverview(ov);
       setTrends(tr);
       setReviewers(rv);
       setDurations(dr);
       setStatuses(st);
+      setCorrections(fc);
+      setEfficiency(eff);
     }).catch(console.error);
   }, []);
+
+  // 效率趋势折线数据：一次通过率 + 同步接受率（同为百分比，可同轴）
+  const effLineData = efficiency.flatMap((p) => [
+    { week: p.week, metric: '一次通过率', value: p.one_pass_rate ?? 0 },
+    { week: p.week, metric: '同步接受率', value: p.sync_acceptance_rate ?? 0 },
+  ]);
+  const latestEff = efficiency[efficiency.length - 1];
+  const maxCorrection = Math.max(1, ...corrections.map((c) => c.correction_count));
+
+  // 效率趋势折线图
+  useChart(effRef, Line, effLineData, (data) => ({
+    data,
+    xField: 'week',
+    yField: 'value',
+    seriesField: 'metric',
+    smooth: true,
+    height: 280,
+    color: ['#22C55E', '#3B82F6'],
+    yAxis: { title: { text: '%', style: { fill: '#94a3b8' } }, label: { style: { fill: '#94a3b8' } } },
+    xAxis: { label: { formatter: (v: string) => v.slice(5), style: { fill: '#94a3b8' } } },
+    legend: { position: 'top', itemName: { style: { fill: '#64748b' } } },
+    lineStyle: { lineWidth: 2 },
+  }));
 
   // 每日趋势折线图
   useChart(trendRef, Line, trends, (data) => ({
@@ -198,8 +230,8 @@ export function ReviewStats({ onBack }: Props) {
                 value={fmtDuration(overview.avg_duration_seconds)}
               />
               <StatCard
-                icon={CheckCircle2} label="通过率" color="bg-green-500" accent="text-green-600"
-                value={fmtRate(overview.approval_rate)}
+                icon={CheckCircle2} label="一次通过率" color="bg-green-500" accent="text-green-600"
+                value={fmtRate(overview.one_pass_rate)}
               />
               <StatCard
                 icon={AlertCircle} label="待审核" color="bg-orange-500" accent="text-orange-600"
@@ -250,6 +282,80 @@ export function ReviewStats({ onBack }: Props) {
           >
             <h2 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">工单状态分布</h2>
             <div ref={statusRef} style={{ minHeight: 260 }} />
+          </motion.section>
+
+          {/* 售后效率趋势（审核质量对售后工单的影响） */}
+          <motion.section
+            className="rounded-2xl border border-border/30 bg-card/60 backdrop-blur-sm shadow-glass-sm p-5"
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+          >
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">售后效率趋势（按周）</h2>
+              {latestEff && (
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  <span className="rounded-lg bg-muted/60 px-2 py-0.5 text-muted-foreground">
+                    平均返工 <b className="text-foreground">{latestEff.avg_reject_count ?? '--'}</b> 次
+                  </span>
+                  <span className="rounded-lg bg-muted/60 px-2 py-0.5 text-muted-foreground">
+                    平均修正 <b className="text-foreground">{latestEff.avg_corrections ?? '--'}</b> 字段
+                  </span>
+                  <span className="rounded-lg bg-muted/60 px-2 py-0.5 text-muted-foreground">
+                    本周确认 <b className="text-foreground">{latestEff.confirmed_count}</b> 单
+                  </span>
+                </div>
+              )}
+            </div>
+            {effLineData.length === 0 ? (
+              <p className="py-8 text-center text-xs text-muted-foreground">
+                暂无已确认工单数据。审核确认工单后此处将按周展示一次通过率与同步接受率趋势。
+              </p>
+            ) : (
+              <>
+                <div ref={effRef} style={{ minHeight: 280 }} />
+                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                  一次通过率 = 无驳回记录即通过 ÷ 全部通过；同步接受率依赖销售易同步启用，未启用时恒为 0。
+                </p>
+              </>
+            )}
+          </motion.section>
+
+          {/* 错误字段 Top（审核员最常纠正的字段） */}
+          <motion.section
+            className="rounded-2xl border border-border/30 bg-card/60 backdrop-blur-sm shadow-glass-sm p-5"
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+          >
+            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold tracking-wide text-muted-foreground">
+              <Wrench className="h-3.5 w-3.5" />
+              错误字段 Top（最常被修正）
+            </h2>
+            {corrections.length === 0 ? (
+              <p className="py-6 text-center text-xs text-muted-foreground">暂无修正记录。</p>
+            ) : (
+              <ul className="space-y-2">
+                {corrections.map((c) => (
+                  <li key={c.field_path} className="flex items-center gap-3">
+                    <span className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={c.field_label}>
+                      {c.field_label}
+                    </span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted/50">
+                      <motion.div
+                        className="h-full rounded-full bg-amber-500/80"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(c.correction_count / maxCorrection) * 100}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-xs font-medium text-foreground">
+                      {c.correction_count}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </motion.section>
         </div>
       </main>

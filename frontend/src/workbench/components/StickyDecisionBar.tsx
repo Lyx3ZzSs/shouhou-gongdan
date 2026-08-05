@@ -41,11 +41,19 @@ export function StickyDecisionBar() {
   if (!ticket) return null;
 
   const idx = list.findIndex((i) => i.id === selectedId);
+  // 已确认/已驳回（提交成功停留当前页）——工单不再可编辑或提交
+  const decided = ticket.status === 'confirmed' || ticket.status === 'rejected';
 
   const handleSubmitClick = () => {
     if (!canSubmit) {
+      // 提供显式反馈：滚动到第一个阻断字段
       const first = blockingFields[0];
-      if (first) locateField(first.fieldId);
+      if (first) {
+        locateField(first.fieldId);
+        // 闪烁按钮提示用户
+        const btn = document.activeElement as HTMLElement;
+        btn?.blur();
+      }
       return;
     }
     openSubmitDialog(effectiveChanges.length > 0 ? 'approved_with_changes' : 'approved');
@@ -110,6 +118,12 @@ export function StickyDecisionBar() {
             </button>
           )}
 
+          {decided ? (
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-success/10 border border-success/20 px-2.5 py-1 text-xs font-medium text-success">
+              {ticket.status === 'confirmed' ? '已确认提交，等待同步销售易' : '已驳回，工单已退回待审核'}
+            </span>
+          ) : (
+            <>
           <Button
             variant="outline"
             size="default"
@@ -121,9 +135,11 @@ export function StickyDecisionBar() {
           </Button>
 
           <div className="mx-1 h-6 w-px bg-border/40 rounded-full" />
+          </>
+          )}
 
           {/* 主 CTA：确认提交 */}
-          {canSubmit ? (
+          {decided ? null : canSubmit && lockState !== 'lost' && lockState !== 'error' ? (
             <motion.div
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
@@ -150,7 +166,11 @@ export function StickyDecisionBar() {
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>存在阻断错误，无法提交</TooltipContent>
+              <TooltipContent>
+                {lockState === 'lost' || lockState === 'error'
+                  ? '编辑锁已丢失，请刷新页面'
+                  : '存在阻断错误，无法提交'}
+              </TooltipContent>
             </Tooltip>
           )}
         </div>

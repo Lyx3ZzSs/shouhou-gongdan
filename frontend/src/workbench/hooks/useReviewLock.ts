@@ -42,6 +42,13 @@ export function useReviewLock(workorderId: string | undefined) {
           clearHeartbeat();
           let heartbeatFailures = 0;
           heartbeatTimerRef.current = setInterval(async () => {
+            // 提交成功（lockState='released'）或工单已切换/关闭时停掉心跳：
+            // 锁已由后端在 confirm 后释放，继续心跳只会收到 423 误报锁丢失。
+            const cur = useReviewStore.getState();
+            if (cur.lockState === 'released' || !cur.ticket || cur.ticket.id !== workorderId) {
+              clearHeartbeat();
+              return;
+            }
             try {
               const result = await heartbeatLock(workorderId);
               heartbeatFailures = 0; // 成功后重置计数

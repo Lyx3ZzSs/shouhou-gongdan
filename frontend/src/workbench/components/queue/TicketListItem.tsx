@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<QueueItemStatus, string> = {
   reviewing: '审核中',
   returned: '已退回',
   stashed: '已暂存',
+  confirmed: '已确认',
 };
 
 const STATUS_VARIANT: Record<
@@ -21,6 +22,7 @@ const STATUS_VARIANT: Record<
   reviewing: 'default',
   returned: 'warning',
   stashed: 'secondary',
+  confirmed: 'default',
 };
 
 export interface TicketListItemProps {

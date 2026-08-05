@@ -344,6 +344,7 @@ function normalizeStatus(s: string | null | undefined): QueueItem['status'] {
     case 'reviewing': return 'reviewing';
     case 'returned': return 'returned';
     case 'stashed': return 'stashed';
+    case 'confirmed': return 'confirmed';
     default: return 'pending_review';
   }
 }
@@ -516,15 +517,21 @@ function deriveUrgency(level: string | null | undefined): 'high' | 'medium' | 'l
 
 function computeSlaMinutes(requireSolveTime: string | null | undefined): number {
   if (!requireSolveTime) return 480;
-  try {
-    // 销售易 API 返回时间戳（秒）
-    const ts = parseInt(requireSolveTime, 10);
-    if (isNaN(ts)) return 480;
-    const target = ts * 1000;
-    const now = Date.now();
-    const remaining = Math.round((target - now) / 60_000);
-    return Math.max(0, remaining);
-  } catch {
-    return 480;
+  const value = requireSolveTime.trim();
+  if (!value) return 480;
+
+  let targetMs: number;
+  // 纯数字 → 销售易 epoch 秒（如 '1784797500'）
+  if (/^\d+$/.test(value)) {
+    targetMs = parseInt(value, 10) * 1000;
+  } else {
+    // 日期字符串：兼容 'YYYY-MM-DD'（视为 UTC 零点，与后端 _normalize_timestamp
+    // 的 calendar.timegm 一致）/ 'YYYY-MM-DD HH:MM:SS' / ISO 8601
+    const d = value.includes('T') ? new Date(value) : new Date(value.replace(' ', 'T'));
+    if (isNaN(d.getTime())) return 480;
+    targetMs = d.getTime();
   }
+
+  const remaining = Math.round((targetMs - Date.now()) / 60_000);
+  return Math.max(0, remaining);
 }
