@@ -59,7 +59,7 @@ function mergeHeaders(initHeaders: RequestInit['headers']): Record<string, strin
   return merged;
 }
 
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const doFetch = () => {
     const headers = mergeHeaders(options.headers);
     return fetch(url, {
@@ -120,7 +120,24 @@ export async function submitReview(
   return res.json();
 }
 
-export class ConflictError extends Error {}
+export class ConflictError extends Error {
+  /** 服务端当前版本号（409 时返回），null 表示后端未携带 */
+  version: number | null;
+  /** 服务端当前工单状态（409 时返回） */
+  reviewStatus: string | null;
+
+  constructor(detail: unknown) {
+    const info = (typeof detail === 'object' && detail !== null ? detail : {}) as {
+      message?: string;
+      version?: number | null;
+      review_status?: string | null;
+    };
+    super(typeof detail === 'string' ? detail : (info.message ?? '版本冲突，请刷新重试'));
+    this.version = typeof detail === 'string' ? null : (info.version ?? null);
+    this.reviewStatus = typeof detail === 'string' ? null : (info.review_status ?? null);
+  }
+}
+export class LockLostError extends Error {}
 
 export async function acquireLock(id: string): Promise<LockStatus> {
   const res = await authFetch(`${BASE}/${id}/lock`, {
@@ -206,6 +223,10 @@ export async function fetchConfirm(
   });
   if (res.status === 409) {
     throw new ConflictError((await res.json()).detail);
+  }
+  // 423 Locked：编辑锁未持有/已失效，交由 UI 提示重新获取锁
+  if (res.status === 423) {
+    throw new LockLostError(await extractErrorDetail(res, '编辑锁已失效'));
   }
   if (!res.ok) throw new Error(await extractErrorDetail(res, `确认提交失败: ${res.status}`));
   return res.json();

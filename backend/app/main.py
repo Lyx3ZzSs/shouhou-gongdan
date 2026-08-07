@@ -20,6 +20,7 @@ from app.routers import lock, review, stats
 from app.services.lock_service import get_lock_service
 from app.services.review_service import recover_orphan_syncs
 from app.core.database import async_session, dispose_engine
+from app.core.config import settings
 
 # ---- Structured Logging ----
 logging.basicConfig(
@@ -57,10 +58,10 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             raise
 
 
-# ---- Lifecycle (startup recovery + graceful shutdown) ----
+# ---- Lifecycle (startup recovery + periodic sweeper + graceful shutdown) ----
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """应用生命周期：启动时恢复孤儿同步记录，关闭时清理连接。"""
+    """应用生命周期：启动/周期恢复孤儿同步记录，关闭时清理连接。"""
     # 保存后台任务引用，便于异常追踪
     background_tasks: set[asyncio.Task] = set()
 
@@ -72,16 +73,39 @@ async def lifespan(application: FastAPI):
         if exc is not None:
             logger.error("后台同步任务异常", exc_info=exc)
 
+    def _schedule_sync(fn, wid, key, sf) -> None:
+        task = asyncio.create_task(fn(wid, key, sf))
+        background_tasks.add(task)
+        task.add_done_callback(_on_task_done)
+
+    async def _sweeper_loop() -> None:
+        """周期复用恢复逻辑，兜底进程崩溃后 pending 滞留 / 后台任务丢失。
+
+        首次 sleep 后再扫（启动时已恢复一次），interval=0 时禁用。
+        """
+        interval = settings.XIAOSHOUYI_SWEEP_INTERVAL_SECONDS
+        if interval <= 0:
+            return
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                n = await recover_orphan_syncs(
+                    async_session, _schedule_sync,
+                    per_cycle_cap=settings.XIAOSHOUYI_SWEEP_MAX_PER_CYCLE,
+                )
+                if n:
+                    logger.info("周期扫描恢复 %d 条同步记录", n)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("周期扫描同步记录异常")
+
     # 启动：恢复崩溃后遗留的 pending/syncing 记录
-    count = await recover_orphan_syncs(
-        async_session,
-        lambda fn, wid, key, sf: (
-            background_tasks.add(t := asyncio.create_task(fn(wid, key, sf))),
-            t.add_done_callback(_on_task_done),
-        )[-1],
-    )
+    count = await recover_orphan_syncs(async_session, _schedule_sync)
     if count > 0:
         logger.info("启动时恢复了 %d 条孤儿同步记录", count)
+
+    sweeper_task = asyncio.create_task(_sweeper_loop())
 
     yield
     # 关闭 Redis 连接池
@@ -92,11 +116,21 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.warning("Failed to close LockService", exc_info=True)
 
-    # 取消未完成的后台任务（优先于数据库关闭，避免任务操作已释放的连接）
+    # 取消未完成的后台任务与周期扫描（优先于数据库关闭，避免任务操作已释放的连接）
+    sweeper_task.cancel()
     for task in list(background_tasks):
         task.cancel()
-    if background_tasks:
-        await asyncio.gather(*background_tasks, return_exceptions=True)
+    cancel_tasks = [sweeper_task, *background_tasks]
+    if cancel_tasks:
+        await asyncio.gather(*cancel_tasks, return_exceptions=True)
+
+    # 关闭销售易客户端单例（httpx 连接池 + token 缓存）
+    try:
+        from app.clients.xiaoshouyi import close_xiaoshouyi_client
+        await close_xiaoshouyi_client()
+        logger.info("XiaoShouYi client closed")
+    except Exception:
+        logger.warning("Failed to close XiaoShouYi client", exc_info=True)
 
     # 关闭数据库连接池
     try:

@@ -36,6 +36,7 @@ class VTicket(Base):
     isHandled__c = Column(String(20))
     needOnSite__c = Column(String(20))
     remark__c = Column(Text)
+    relatedAttachment__c = Column(String(512))
     planFeedbackTime__c = Column(String(100))
     requireSolveTime__c = Column(String(100))
     defectFlag__c = Column(String(20))

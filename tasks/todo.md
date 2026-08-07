@@ -249,3 +249,128 @@ ReviewWorkbench（根：h-screen flex-col + TooltipProvider + 键盘/暂存 hook
 - 旧 `WorkOrderReview/` 保留不删（有测试），仅不再路由。
 - 状态8/9 用"更多操作→模拟"显式触发，避免污染默认流程（诚实标注演示）。
 - shadcn primitives 手写（=shadcn 本意：组件归你所有），Radix 仅用于 dialog/popover/tooltip/select/dropdown-menu 以保无障碍。
+
+---
+
+## 11. Review 驱动修复 — 第一批（2026-08-05）
+
+三子 Agent 并行 Review（前端交互/后端架构/统计可视化）后按路线图修复的第一批正确性核心问题。
+
+### 已完成
+
+1. **同步早退 failed 落库** `backend/app/services/review_service.py`
+   - 记录不存在、ticket_no 不在 v_ticket 的两个早退分支，返回前写 `sync_status='failed' + sync_last_error`，避免工单永久卡 `syncing` 不可见。
+2. **驳回重置耗时 + 统计驳回口径修正** `review_service.py` / `stats_service.py` / `frontend/src/stats`
+   - `_execute_reject` 置 `review_started_at=NULL, review_duration_seconds=NULL`，二次确认耗时只含第二段。
+   - stats 通过按 `reviewed_at`、驳回按 `last_rejected_at` 分别取数 UNION 聚合；状态分布新增"已驳回待返工"切片；overview 新增 `one_pass_rate`（一次通过率）、`total_rejected`，修正 `approval_rate` 分母（已评审而非含未审核）。
+3. **前端提交成功回写状态 + 停心跳** `useReviewStore.ts` / `useReviewLock.ts` / `StickyDecisionBar.tsx`
+   - submit 成功回写 `ticket.status`（confirmed/rejected）+ version+1，停留页时置 `lockState='released'`；心跳检测到 released/工单切换即停，不再 2 分钟误报锁丢失。
+   - `selectCanSubmit` / `setFieldValue` / `resetField` 增加已决策守卫；StickyDecisionBar 显示"已确认提交/已驳回"终态。
+4. **409 冲突结构化 + 冲突合并用最新版本** `review_service.py` / `api/review.ts` / `useReviewStore.ts`
+   - 409 返回 `{message, version, review_status}`；`ConflictError` 携带二者；merge 分支改用 `latest.version`，工单已被他人确认/驳回时从队列移除并提示。
+
+### 验证
+
+- 后端：`py_compile` + app import OK；脚本级端到端验证 4 项全通过
+  - #13 伪造 ticket_no → 同步返回 failed 且落库（此前卡 syncing）✓
+  - #14 驳回后 `review_started_at=NULL`、`reject_count=1`，by-reviewer 驳回数可见（此前恒 0）✓
+  - #16 错误版本提交 → 409 返回结构化 `{version, review_status}` ✓
+  - 新 stats 4 个查询在真实库执行通过 ✓
+- 前端：`npx tsc --noEmit` 通过 ✓
+
+### 待办（后续批次）
+
+- 第二/三批：索引与 DDL 权威统一、周期 sweeper、httpx 单例、销售易 idempotencyKey 去重语义确认、SLA/日期解析、统计接口鉴权、错误字段聚合、售后效率趋势面板。
+
+---
+
+## 12. Review 驱动修复 — 第二批（2026-08-05）
+
+性能与可靠性。
+
+### 已完成
+
+5. **补索引 + 统一 DDL 权威** `schema_init.sql` / `init_pg.py` / `README.md`
+   - 确认部署路径：`docker compose up` 自动执行 `schema_init.sql`；alembic 为"stamp 标记、从未执行"的遗留（迁移目标还是废弃的 `workorder` 表）。
+   - `schema_init.sql` 补齐 workorder_review 全部索引（review_status / review_status+created_at DESC / sync_status / sync_status+reviewed_at / created_at DESC / updated_at / sync_external_id）。
+   - 运行库补齐缺失的 3 个索引：idx_review_created_at、idx_review_sync_reviewed、idx_review_sync_external_id（其余已存在）。
+   - 统一 DDL 权威：README 标注 schema_init.sql 为唯一权威；`init_pg.py` 标注为遗留脚本并修正误导性的"alembic stamp head"指引。
+6. **周期 sweeper 复用原子认领** `main.py` / `review_service.py` / `config.py`
+   - lifespan 中新增 `_sweeper_loop` 周期任务，复用 `recover_orphan_syncs`（interval 默认 120s，0 禁用），兜底进程崩溃后 pending 滞留/后台任务丢失。
+   - `recover_orphan_syncs` 增加 `per_cycle_cap` 参数（默认 50），防止销售易故障后积压时无界 fan-out。
+7. **httpx 客户端改进程级单例** `xiaoshouyi.py` / `review_service.py` / `main.py`
+   - `get_xiaoshouyi_client()` 改为进程级单例（共享 httpx 连接池 + token 缓存），新增 `close_xiaoshouyi_client()`。
+   - 移除每次同步后的 `client.close()`，改为 shutdown 时统一关闭。
+   - 效果：不再每单重取 token（同步从 2 次 HTTP 往返降为 1 次）、复用 TCP/TLS 连接。
+
+### 验证
+
+- `py_compile` + app import + lifespan 启停集成验证通过（sweeper 任务正常创建与取消、Redis/销售易客户端/DB 连接干净关闭）✓
+- recover_orphan_syncs 认领 + 30min 防重复认领验证通过 ✓
+- 单例客户端：3 次调用同一实例、httpx 连接池共享验证通过 ✓
+- 运行库最终 10 个索引（pkey + unique + 8 索引）✓
+
+### 待办（第三批，含需你决策项）
+
+- 销售易 `idempotencyKey__c` 去重语义确认（决定认领条件是否收紧）
+- SLA/日期解析修复（前端 `computeSlaMinutes` epoch 秒误解析）
+- 统计接口鉴权（`/api/stats/*` 加 require_any_role，需同步改前端带 token）
+- 错误字段聚合接口（audit_log.field_path）与售后效率趋势面板
+
+---
+
+## 13. Review 驱动修复 — 第三批（2026-08-05）
+
+数据价值与安全加固。
+
+### 已完成
+
+8. **同步认领条件收紧** `review_service.py`
+   - 认领条件由 `(sync_status != 'syncing' OR sync_idempotency_key = :key)` 收紧为 `sync_status != 'syncing'`：已处于 syncing 的行由活跃任务继续 / 30 分钟超时恢复接管，杜绝多 worker 下同 key 并发双发。
+   - 注：顺序重试的重复风险（超时后销售易已建单）仍取决于销售易 `idempotencyKey__c` 去重语义，需销售易侧确认。
+9. **SLA/日期解析修复** `frontend/.../converters.ts`
+   - `computeSlaMinutes` 原先 `parseInt('2026-08-15')=2026` 按 epoch 秒误解析 → SLA 恒为 0。现兼容：纯数字 epoch 秒 / `YYYY-MM-DD`（UTC 零点，与后端 `_normalize_timestamp` 一致）/ `YYYY-MM-DD HH:MM:SS` / ISO 8601。
+10. **统计接口鉴权** `routers/stats.py` / `frontend/src/api/stats.ts`
+    - `/api/stats/*` 7 个端点全部加 `require_any_role`（原 5 个公开）；前端 `api/stats.ts` 复用 `api/review.ts` 的 `authFetch`（401 自动刷新 token），AUTH_ENABLED=false 时依旧放行。
+11. **错误字段聚合接口** `stats_service.py` / `routers/stats.py` / `frontend`
+    - 新增 `GET /api/stats/field-corrections`：按 `audit_log.field_label/field_path` 聚合修正频次（真实数据：工单主题 6 次、工单描述 2 次）。
+    - 前端"错误字段 Top"横条图展示。
+12. **售后效率趋势面板** `stats_service.py` / `routers/stats.py` / `frontend`
+    - 新增 `GET /api/stats/efficiency?weeks=`：按确认周聚合 一次通过率 / 平均返工 / 平均修正字段数 / 同步接受率。
+    - 前端"售后效率趋势"折线图（一次通过率 + 同步接受率双线）+ 本周返工/修正/单量指标卡；注明同步接受率依赖销售易启用。
+
+### 验证
+
+- 后端：`py_compile` + app import OK；运行中服务 7 个 stats 端点鉴权后正常返回；efficiency 构造数据聚合数学验证通过（一次通过率/同步接受率=100、返工=0、修正=8）✓
+- 前端：`npx tsc --noEmit` 通过 ✓
+- field-corrections 返回真实修正数据 ✓
+
+### 待办（第四批/需外部确认）
+
+- **销售易 `idempotencyKey__c` 去重语义**：需销售易侧确认同 key 是否返回原 dataId。若不支持去重，顺序重试仍可能重复建单，需引入对账机制。
+- bad_case_sample 管道统计（表只写不读，字段聚合已含 audit_log 部分）
+- 审核前 vs 审核后对照基线（需上线前数据，当前只能纵向趋势）
+
+---
+
+## 14. 销售易幂等去重语义实证（2026-08-05）
+
+`scripts/test_idempotency_key.py` 对真实 API 实证测试：同一 `idempotencyKey__c` 调用 3 次 `insertServiceCase`。
+
+### 结论：❌ 销售易不去重
+
+| 调用 | key | body | dataId |
+|---|---|---|---|
+| 1 | 同 K | A | 4442540885476117 |
+| 2 | 同 K | A（完全一致） | 4442540885476131（不同）|
+| 3 | 同 K | B（name 改） | 4442540821021485 |
+
+同 key + 同 body 也新建工单。`idempotencyKey__c` 仅是透传自定义字段，**不能作为去重依据**。
+
+### 影响与加固
+
+- 原重试逻辑（超时后同 key 重发，最多 3 次）会重复建单。
+- **加固 `review_service.py`**：`asyncio.TimeoutError`（wait_for 20s）不再自动重试——超时 = 请求可能已到达销售易并成功建单、仅响应丢失，盲目重试会重复；改为直接标记 `sync_status='failed'` 并提示"工单可能已创建，请核实"。`failed` 状态 sweeper 不认领，仅管理员 `retry` 端点可人工处理。
+- 仍安全的重试路径：HTTP 5xx/408/429（服务端明确拒绝，未建单）、Connect/Pool 网络错误（请求未发出）。
+- 文档仅有 `insertServiceCase`，无查询/列表接口，暂时无法做"重试前回查"式对账；如需彻底闭环需向销售易申请查询类接口。
+- 实证测试在销售易创建了 3 条标记"幂等测试"的测试工单（幂等测试-工单A×2、幂等测试-工单B）。

@@ -27,7 +27,7 @@ async def acquire_lock(
     if result.get("is_new") and result.get("locked"):
         try:
             await db.execute(
-                text("UPDATE workorder SET review_started_at = :now WHERE id = :id AND review_started_at IS NULL"),
+                text("UPDATE workorder_review SET review_started_at = :now WHERE id = :id AND review_started_at IS NULL"),
                 {"now": datetime.now(timezone.utc), "id": workorder_id},
             )
             await db.commit()

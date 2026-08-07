@@ -44,6 +44,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0001",
         "name": "华能阜新风电场功率预测精度下降问题",
+        "ownerId": "EMP000101",
+        "dimDepart": "售后服务部",
         "caseSource": "1",  # 语音
         "feedbackChannel__c": "1",  # 400电话
         "workOrderStatus__c": "1",  # 售后单
@@ -81,6 +83,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0002",
         "name": "中广核敦煌光伏电站数据采集异常",
+        "ownerId": "EMP000102",
+        "dimDepart": "运维部",
         "caseSource": "2",  # 小组件
         "feedbackChannel__c": "2",  # 企微助手
         "workOrderStatus__c": "2",  # 投诉单
@@ -117,6 +121,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0003",
         "name": "国电投青海共和风场AGC考核争议",
+        "ownerId": "EMP000103",
+        "dimDepart": "技术部",
         "caseSource": "3",  # 留言
         "feedbackChannel__c": "3",  # 微信客服
         "workOrderStatus__c": "3",  # A类售后单
@@ -153,6 +159,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0004",
         "name": "华电宁夏灵武光伏电站逆变器故障",
+        "ownerId": "EMP000104",
+        "dimDepart": "工程运维部",
         "caseSource": "4",  # 意见反馈
         "feedbackChannel__c": "4",  # 销售部
         "workOrderStatus__c": "1",  # 售后单
@@ -189,6 +197,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0005",
         "name": "大唐内蒙古赤峰风场测风塔数据异常",
+        "ownerId": "EMP000105",
+        "dimDepart": "工程运维部",
         "caseSource": "5",  # 其他
         "feedbackChannel__c": "5",  # 企微群
         "workOrderStatus__c": "1",  # 售后单
@@ -225,6 +235,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0006",
         "name": "中节能新疆哈密风场短期预测模型优化",
+        "ownerId": "EMP000106",
+        "dimDepart": "技术部",
         "caseSource": "6",  # 微信公众号
         "feedbackChannel__c": "6",  # 微信
         "workOrderStatus__c": "1",  # 售后单
@@ -261,6 +273,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0007",
         "name": "三峡云南永胜光伏电站系统升级需求",
+        "ownerId": "EMP000107",
+        "dimDepart": "技术部",
         "caseSource": "7",  # 邮件
         "feedbackChannel__c": "7",  # 邮件
         "workOrderStatus__c": "4",  # 提级售后单
@@ -297,6 +311,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0008",
         "name": "龙源电力江苏如东海上风电通讯中断",
+        "ownerId": "EMP000108",
+        "dimDepart": "工程运维部",
         "caseSource": "1",  # 语音
         "feedbackChannel__c": "1",  # 400电话
         "workOrderStatus__c": "5",  # 大客户售后单
@@ -333,6 +349,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0009",
         "name": "中核集团福建福清核电站周边风场数据对接",
+        "ownerId": "EMP000109",
+        "dimDepart": "技术部",
         "caseSource": "8",  # APP
         "feedbackChannel__c": "8",  # 客户会议
         "workOrderStatus__c": "1",  # 售后单
@@ -369,6 +387,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0010",
         "name": "华润广东湛江风电场年度精度报告需求",
+        "ownerId": "EMP000110",
+        "dimDepart": "数据中心",
         "caseSource": "99",  # 微信小程序
         "feedbackChannel__c": "10",  # 闭环回访
         "workOrderStatus__c": "1",  # 售后单
@@ -405,6 +425,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0011",
         "name": "京能河北张家口风电场扩容功率预测适配",
+        "ownerId": "EMP000111",
+        "dimDepart": "技术部",
         "caseSource": "1",  # 语音
         "feedbackChannel__c": "1",  # 400电话
         "workOrderStatus__c": "6",  # 重要受理单
@@ -441,6 +463,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0012",
         "name": "国家能源集团山西大同光伏电站模型优化",
+        "ownerId": "EMP000112",
+        "dimDepart": "技术部",
         "caseSource": "2",  # 小组件
         "feedbackChannel__c": "12",  # 工程运维部
         "workOrderStatus__c": "1",  # 售后单
@@ -477,6 +501,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0013",
         "name": "中电建四川凉山风电场数据合格率考核",
+        "ownerId": "EMP000113",
+        "dimDepart": "数据中心",
         "caseSource": "3",  # 留言
         "feedbackChannel__c": "13",  # 数据中心
         "workOrderStatus__c": "1",  # 售后单
@@ -513,6 +539,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0014",
         "name": "粤电广东阳江海上风电数据补传",
+        "ownerId": "EMP000114",
+        "dimDepart": "数据中心",
         "caseSource": "4",  # 意见反馈
         "feedbackChannel__c": "14",  # 产品部
         "workOrderStatus__c": "1",  # 售后单
@@ -549,6 +577,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0015",
         "name": "中广核湖北大悟风电场技术培训需求",
+        "ownerId": "EMP000115",
+        "dimDepart": "售后服务部",
         "caseSource": "5",  # 其他
         "feedbackChannel__c": "15",  # 售后服务部
         "workOrderStatus__c": "1",  # 售后单
@@ -585,6 +615,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0016",
         "name": "华能吉林白城风电场免考报告申请",
+        "ownerId": "EMP000116",
+        "dimDepart": "技术部",
         "caseSource": "6",  # 微信公众号
         "feedbackChannel__c": "17",  # 精度会议
         "workOrderStatus__c": "2",  # 投诉单
@@ -621,6 +653,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0017",
         "name": "国电江西赣州光伏电站运维问题咨询",
+        "ownerId": "EMP000117",
+        "dimDepart": "售后服务部",
         "caseSource": "7",  # 邮件
         "feedbackChannel__c": "7",  # 邮件
         "workOrderStatus__c": "1",  # 售后单
@@ -657,6 +691,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0018",
         "name": "中节能甘肃酒泉风电场设备试验配合",
+        "ownerId": "EMP000118",
+        "dimDepart": "技术部",
         "caseSource": "8",  # APP
         "feedbackChannel__c": "18",  # 替换会议
         "workOrderStatus__c": "7",  # 非常重要受理单
@@ -693,6 +729,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0019",
         "name": "三峡西藏那曲风电场特殊环境设备问题",
+        "ownerId": "EMP000119",
+        "dimDepart": "工程运维部",
         "caseSource": "1",  # 语音
         "feedbackChannel__c": "1",  # 400电话
         "workOrderStatus__c": "3",  # A类售后单
@@ -729,6 +767,8 @@ TICKETS = [
     {
         "ticket_no": "SRV-2026-0020",
         "name": "粤电贵州毕节光伏电站消缺整改",
+        "ownerId": "EMP000120",
+        "dimDepart": "技术部",
         "caseSource": "2",  # 小组件
         "feedbackChannel__c": "11",  # 日常回访
         "workOrderStatus__c": "1",  # 售后单
@@ -1067,7 +1107,7 @@ async def seed(engine) -> None:
 
         # ── 5. 设置不同的审核状态 ──
         print("🎨 设置多样化的审核状态...")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # 获取所有 workorder_review 记录
         result = await db.execute(

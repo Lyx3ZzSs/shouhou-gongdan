@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -16,9 +17,20 @@ from app.services.lock_service import get_lock_service
 from app.core.config import settings
 from app.clients.xiaoshouyi import (
     get_xiaoshouyi_client,
+    XiaoShouYiError,
 )
 
 logger = logging.getLogger(__name__)
+
+# 并发控制：限制同时进行的销售易同步数量，防止浪涌
+_sync_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sync_semaphore() -> asyncio.Semaphore:
+    global _sync_semaphore
+    if _sync_semaphore is None:
+        _sync_semaphore = asyncio.Semaphore(settings.XIAOSHOUYI_SYNC_MAX_CONCURRENCY)
+    return _sync_semaphore
 
 
 @dataclass
@@ -55,6 +67,9 @@ async def background_sync_to_xiaoshouyi(
     for attempt in range(1, max_retries + 1):
         try:
             # ---- 原子认领 ----
+            # 认领条件：仅当当前未被同步（非 syncing）才认领。已处于 syncing 的
+            # 行由活跃任务继续、或由 30 分钟超时恢复（recover_orphan_syncs）接管，
+            # 杜绝多 worker 下同一 idempotency key 并发双发到销售易。
             async with session_factory() as db:
                 claim_result = await db.execute(
                     text("""
@@ -65,7 +80,7 @@ async def background_sync_to_xiaoshouyi(
                             sync_started_at = NOW()
                         WHERE id = :id
                           AND sync_external_id IS NULL
-                          AND (sync_status != 'syncing' OR sync_idempotency_key = :key)
+                          AND sync_status != 'syncing'
                     """),
                     {"id": workorder_id, "attempt": attempt, "key": sync_idempotency_key},
                 )
@@ -91,7 +106,15 @@ async def background_sync_to_xiaoshouyi(
                 )
                 row = result.mappings().first()
                 if row is None:
-                    logger.error("销售易同步失败: 审核记录 %s 不存在", workorder_id)
+                    # 已认领为 syncing 后记录消失，必须落库失败态，否则永久卡 syncing
+                    msg = f"审核记录 {workorder_id} 不存在"
+                    logger.error("销售易同步失败: %s", msg)
+                    await db.execute(
+                        update(WorkOrderReview)
+                        .where(WorkOrderReview.id == workorder_id)
+                        .values(sync_status='failed', sync_attempts=attempt, sync_last_error=msg),
+                    )
+                    await db.commit()
                     return 'failed'
 
                 ticket_no = row.get("ticket_no")
@@ -100,7 +123,14 @@ async def background_sync_to_xiaoshouyi(
                 # 获取 v_ticket 业务数据
                 ticket_dict = await _get_ticket_dict(db, ticket_no)
                 if ticket_dict is None:
-                    logger.error("销售易同步失败: ticket_no=%s 在 v_ticket 中不存在", ticket_no)
+                    msg = f"ticket_no={ticket_no} 在 v_ticket 中不存在"
+                    logger.error("销售易同步失败: %s", msg)
+                    await db.execute(
+                        update(WorkOrderReview)
+                        .where(WorkOrderReview.id == workorder_id)
+                        .values(sync_status='failed', sync_attempts=attempt, sync_last_error=msg),
+                    )
+                    await db.commit()
                     return 'failed'
 
                 # merge: v_ticket 原始值 + field_overrides 覆盖
@@ -108,12 +138,15 @@ async def background_sync_to_xiaoshouyi(
                 merged = {**ticket_dict, **overrides}
                 req = map_db_to_xiaoshouyi(merged, sync_idempotency_key)
 
-            # ---- 调用销售易 API ----
+            # ---- 调用销售易 API（带并发控制）----
+            # 客户端为进程级单例（共享连接池 + token 缓存），shutdown 时统一关闭
             client = get_xiaoshouyi_client()
-            sync_result = await asyncio.wait_for(
-                client.create_work_order(req),
-                timeout=timeout,
-            )
+            sem = _get_sync_semaphore()
+            async with sem:
+                sync_result = await asyncio.wait_for(
+                    client.create_work_order(req),
+                    timeout=timeout,
+                )
 
             # ---- 写入同步结果 ----
             async with session_factory() as db:
@@ -153,9 +186,49 @@ async def background_sync_to_xiaoshouyi(
             except Exception:
                 logger.warning("销售易同步取消后状态重置失败 workorder=%s", workorder_id, exc_info=True)
             raise
-        except (asyncio.TimeoutError, NotImplementedError) as e:
+        except XiaoShouYiError as e:
             last_error = str(e)
-            logger.warning("销售易同步失败 workorder=%s attempt=%d/%d: %s",
+            if e.retryable:
+                logger.warning("销售易同步可重试错误 workorder=%s attempt=%d/%d: %s",
+                               workorder_id, attempt, max_retries, last_error)
+            else:
+                logger.error("销售易同步不可重试错误 workorder=%s attempt=%d/%d: %s",
+                             workorder_id, attempt, max_retries, last_error)
+                try:
+                    async with session_factory() as db:
+                        await db.execute(
+                            update(WorkOrderReview)
+                            .where(WorkOrderReview.id == workorder_id)
+                            .values(
+                                sync_status='failed', sync_attempts=attempt,
+                                sync_last_error=last_error,
+                            ),
+                        )
+                        await db.commit()
+                except Exception:
+                    logger.exception("销售易同步失败状态写入异常 workorder=%s", workorder_id)
+                return 'failed'
+        except asyncio.TimeoutError as e:
+            # 实证结论：销售易 idempotencyKey__c 不去重（同 key 同 body 也新建工单）。
+            # 超时 = 请求可能已到达销售易并成功建单、仅响应丢失，盲目重试会重复建单，
+            # 因此不再自动重试，直接标记 failed（sweeper 也不认领 failed）并提示人工核实。
+            last_error = f"销售易同步超时（工单可能已创建于销售易，请核实 external_id 后处理）: {e}"
+            logger.error("销售易同步超时（不自动重试，防重复建单） workorder=%s attempt=%d: %s",
+                         workorder_id, attempt, last_error)
+            try:
+                async with session_factory() as db:
+                    await db.execute(
+                        update(WorkOrderReview)
+                        .where(WorkOrderReview.id == workorder_id)
+                        .values(sync_status='failed', sync_attempts=attempt, sync_last_error=last_error),
+                    )
+                    await db.commit()
+            except Exception:
+                logger.exception("销售易同步超时状态写入异常 workorder=%s", workorder_id)
+            return 'failed'
+        except NotImplementedError as e:
+            last_error = str(e)
+            logger.warning("销售易同步未实现 workorder=%s attempt=%d/%d: %s",
                            workorder_id, attempt, max_retries, last_error)
         except Exception as e:
             last_error = str(e)
@@ -199,8 +272,13 @@ async def background_sync_to_xiaoshouyi(
 async def recover_orphan_syncs(
     session_factory: async_sessionmaker,
     schedule_fn,
+    per_cycle_cap: int | None = None,
 ) -> int:
-    """启动时恢复孤儿同步记录。"""
+    """恢复孤儿同步记录（启动时与周期 sweeper 共用）。
+
+    per_cycle_cap: 单次调用最多恢复的记录数，防止销售易长时间故障后积压
+    大量 confirmed-pending 工单时无界 fan-out（每次调用无限创建协程任务）。
+    """
     max_retries = settings.XIAOSHOUYI_SYNC_MAX_RETRIES
     if max_retries < 1:
         return 0
@@ -243,6 +321,10 @@ async def recover_orphan_syncs(
         if not batch:
             break
 
+        # 已达本轮上限：本批次已认领（FOR UPDATE SKIP LOCKED）仍需调度，
+        # 否则会卡 syncing 等 30 分钟；停止继续认领，剩余留待下轮
+        cap_exceeded = per_cycle_cap is not None and recovered + len(batch) > per_cycle_cap
+
         for row in batch:
             wid = row["id"]
             idempotency_key = row.get("sync_idempotency_key") or f"recover-{wid}"
@@ -257,6 +339,10 @@ async def recover_orphan_syncs(
                 logger.info("孤儿同步记录已恢复 workorder=%s key=%s", wid, idempotency_key)
             except Exception:
                 logger.exception("孤儿同步记录恢复失败 workorder=%s", wid)
+
+        if cap_exceeded:
+            logger.info("周期扫描已达上限 %d 条，剩余记录留待下轮", per_cycle_cap)
+            return recovered
 
     if recovered > 0:
         logger.info("孤儿同步记录恢复完成: %d 条", recovered)
@@ -275,6 +361,19 @@ class ReviewService:
             await self.lock_service.release(workorder_id, operator_id)
         except PermissionError:
             pass
+
+    async def _raise_version_conflict(self, workorder_id: str) -> None:
+        """409 冲突时返回服务端当前 version/review_status，供前端真实展示。"""
+        row = await self.db.execute(
+            text("SELECT version, review_status FROM workorder_review WHERE id = :id"),
+            {"id": workorder_id},
+        )
+        r = row.mappings().first()
+        raise HTTPException(status_code=409, detail={
+            "message": "版本冲突，请刷新重试",
+            "version": r["version"] if r else None,
+            "review_status": r["review_status"] if r else None,
+        })
 
     async def delete_stash(self, workorder_id: str) -> None:
         await self.db.execute(
@@ -310,16 +409,22 @@ class ReviewService:
         self, workorder_id, request, operator_id, operator_name, operator_department,
     ):
         # 乐观锁 UPDATE — confirmed 分支
+        # 注意：reviewed_at 是 TIMESTAMP WITHOUT TZ，review_started_at 是
+        # TIMESTAMPTZ。:now 只用于 CAST(:now AS timestamp) 一处，因此必须传
+        # offset-naive datetime（datetime.utcnow()），否则 asyncpg 的 timestamp
+        # 编码器无法处理 offset-aware datetime。
+        # EXTRACT 中使用 PostgreSQL 内置 NOW() 函数（返回 TIMESTAMPTZ），
+        # 与 review_started_at 类型一致，避免参数类型冲突。
         result = await self.db.execute(
             text("""
                 UPDATE workorder_review
                 SET review_status = 'confirmed', version = version + 1,
-                    reviewed_at = :now, reviewed_by = :operator_name,
+                    reviewed_at = CAST(:now AS timestamp), reviewed_by = :operator_name,
                     sync_status = 'pending', sync_attempts = 0,
                     sync_last_error = NULL, review_notes = :review_notes,
                     review_duration_seconds = CASE
                         WHEN review_started_at IS NOT NULL
-                        THEN EXTRACT(EPOCH FROM (:now - review_started_at))::int
+                        THEN EXTRACT(EPOCH FROM (NOW() - review_started_at))::int
                         ELSE NULL
                     END
                 WHERE id = :id AND version = :version AND review_status != 'confirmed'
@@ -333,7 +438,7 @@ class ReviewService:
             },
         )
         if result.rowcount == 0:
-            raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
+            await self._raise_version_conflict(workorder_id)
 
         # 白名单过滤 + 写入 field_overrides JSONB（而非直接 UPDATE 各列）
         filtered_changes = [
@@ -346,10 +451,10 @@ class ReviewService:
             await self.db.execute(
                 text("""
                     UPDATE workorder_review
-                    SET field_overrides = field_overrides || :updates::jsonb
+                    SET field_overrides = field_overrides || CAST(:updates AS jsonb)
                     WHERE id = :id
                 """),
-                {"id": workorder_id, "updates": str(override_updates)},
+                {"id": workorder_id, "updates": json.dumps(override_updates, ensure_ascii=False)},
             )
 
         # 写入审计日志
@@ -392,15 +497,12 @@ class ReviewService:
                     reject_count = reject_count + 1,
                     last_reject_reason = :reason,
                     last_rejected_by = :operator_name,
-                    last_rejected_at = :now,
+                    last_rejected_at = CAST(:now AS timestamp),
                     review_notes = :review_notes,
                     sync_status = 'pending', sync_attempts = 0,
                     sync_last_error = NULL,
-                    review_duration_seconds = CASE
-                        WHEN review_started_at IS NOT NULL
-                        THEN EXTRACT(EPOCH FROM (:now - review_started_at))::int
-                        ELSE NULL
-                    END
+                    review_started_at = NULL,
+                    review_duration_seconds = NULL
                 WHERE id = :id AND version = :version AND review_status != 'confirmed'
             """),
             {
@@ -413,7 +515,7 @@ class ReviewService:
             },
         )
         if result.rowcount == 0:
-            raise HTTPException(status_code=409, detail="版本冲突，请刷新重试")
+            await self._raise_version_conflict(workorder_id)
 
         await self.audit_service.create_reject_log(
             workorder_id=workorder_id,
@@ -450,8 +552,16 @@ class ReviewService:
         try:
             async with self.db.begin():
                 result = await self.db.execute(
-                    text("SELECT id FROM workorder_audit_log WHERE session_id = :sid LIMIT 1"),
-                    {"sid": request.session_id},
+                    text("""
+                        SELECT al.id
+                        FROM workorder_audit_log al
+                        JOIN workorder_review wr ON wr.id = al.workorder_id
+                        WHERE al.session_id = :sid
+                          AND al.workorder_id = :wid
+                          AND wr.review_status = 'confirmed'
+                        LIMIT 1
+                    """),
+                    {"sid": request.session_id, "wid": workorder_id},
                 )
                 if result.scalar():
                     await self.delete_stash(workorder_id)

@@ -30,6 +30,7 @@ export function ReviewSubmitDialog() {
   const notes = useReviewStore((s) => s.notes);
   const setNotes = useReviewStore((s) => s.setNotes);
   const ticket = useReviewStore((s) => s.ticket);
+  const lockState = useReviewStore((s) => s.lockState);
 
   const changes = useEffectiveChanges();
   const progress = useReviewProgress();
@@ -56,6 +57,9 @@ export function ReviewSubmitDialog() {
   const handled = totalAnomalies - unresolved.length;
 
   const handleSubmit = () => {
+    if (lockState === 'lost' || lockState === 'error') {
+      return; // 锁已丢失，submit() 内部也会拦截并设置 error
+    }
     if (decision === 'rejected' && !notes?.trim()) {
       setShowNotesError(true);
       return;
@@ -63,6 +67,8 @@ export function ReviewSubmitDialog() {
     setShowNotesError(false);
     submit(decision, openNext);
   };
+
+  const lockLost = lockState === 'lost' || lockState === 'error';
 
   const reasonSummary = new Map<string, number>();
   for (const c of changes) {
@@ -81,6 +87,18 @@ export function ReviewSubmitDialog() {
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+          {/* 锁丢失警告 */}
+          {lockLost && (
+            <section className="flex items-start gap-2 rounded-lg bg-destructive/8 border border-destructive/20 p-3 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">编辑锁已丢失</p>
+                <p className="text-xs text-destructive/70 mt-0.5">
+                  编辑锁已过期或被释放，无法提交审核。请刷新页面重新获取编辑锁后再操作。
+                </p>
+              </div>
+            </section>
+          )}
           {/* 本次修改 */}
           <section>
             <div className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
@@ -195,8 +213,8 @@ export function ReviewSubmitDialog() {
             <Button variant="outline" onClick={closeSubmitDialog} disabled={submitting} className="rounded-xl">
               取消
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting} className="rounded-xl shadow-glow-primary">
-              {submitting ? '提交中…' : `提交（${meta.label}）`}
+            <Button onClick={handleSubmit} disabled={submitting || lockLost} className="rounded-xl shadow-glow-primary">
+              {lockLost ? '请刷新页面' : submitting ? '提交中…' : `提交（${meta.label}）`}
             </Button>
           </div>
         </DialogFooter>

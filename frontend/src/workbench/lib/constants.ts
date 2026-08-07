@@ -84,6 +84,7 @@ export const QUEUE_STATUS_OPTIONS = [
   { value: 'reviewing', label: '审核中' },
   { value: 'returned', label: '已退回' },
   { value: 'stashed', label: '已暂存' },
+  { value: 'confirmed', label: '已确认' },
 ];
 
 export const SLA_OPTIONS = [

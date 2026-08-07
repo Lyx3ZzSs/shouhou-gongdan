@@ -1,5 +1,8 @@
-"""初始化 PostgreSQL 表结构。
+"""初始化 PostgreSQL 表结构（遗留脚本，已弃用）。
 
+⚠️ 数据库 DDL 唯一权威为根目录 schema_init.sql（docker compose up 启动时
+自动执行，创建 public.workorder_review 等真实表）。本脚本创建的是已废弃的
+旧 workorder 表，仅保留作历史参考，勿用于新环境初始化。
 用法: cd backend && source .venv/bin/activate && python init_pg.py
 """
 
@@ -144,7 +147,7 @@ async def main():
             await conn.execute(sa_text(stmt))
 
     print("\n✅ 4 张表 + 7 个索引创建完成")
-    print("下一步: alembic stamp head")
+    print("注意: 本脚本已废弃。真实 DDL 权威为根目录 schema_init.sql，alembic 迁移不参与部署。")
     await engine.dispose()
 
 

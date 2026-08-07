@@ -173,6 +173,16 @@ CREATE TABLE IF NOT EXISTS public.workorder_review (
     CONSTRAINT workorder_review_ticket_no_key UNIQUE (ticket_no)
 );
 
+-- workorder_review 索引（列表/统计/同步恢复/同步失败查询）
+-- 注：本文件是唯一 DDL 权威（docker compose 启动时自动执行）；alembic 迁移为遗留
+CREATE INDEX IF NOT EXISTS idx_review_status          ON public.workorder_review (review_status);
+CREATE INDEX IF NOT EXISTS idx_review_status_created  ON public.workorder_review (review_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_sync_status     ON public.workorder_review (sync_status);
+CREATE INDEX IF NOT EXISTS idx_review_sync_reviewed   ON public.workorder_review (sync_status, reviewed_at);
+CREATE INDEX IF NOT EXISTS idx_review_created_at      ON public.workorder_review (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_updated_at      ON public.workorder_review (updated_at);
+CREATE INDEX IF NOT EXISTS idx_review_sync_external_id ON public.workorder_review (sync_external_id);
+
 -- ----------------------------------------------------------------------------
 -- public.workorder_audit_log — 审核审计日志表
 -- ----------------------------------------------------------------------------
