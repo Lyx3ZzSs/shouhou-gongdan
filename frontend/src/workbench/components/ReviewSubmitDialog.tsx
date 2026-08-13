@@ -35,7 +35,8 @@ export function ReviewSubmitDialog() {
   const changes = useEffectiveChanges();
   const progress = useReviewProgress();
   const unresolved = useUnresolvedAnomalies();
-  const [openNext, setOpenNext] = useState(false);
+  // 默认勾选"提交并进入下一条"：审批完成后自动跳转下一工单，可取消
+  const [openNext, setOpenNext] = useState(true);
   const [showNotesError, setShowNotesError] = useState(false);
 
   useEffect(() => {

@@ -38,8 +38,11 @@ export interface WorkOrderData {
   last_rejected_at: string | null;
   review_notes: string | null;
   field_overrides: Record<string, unknown> | null;
+  original_data?: Record<string, unknown> | null;
+  validation?: WorkOrderValidation | null;
   sync_status: string | null;
   sync_external_id: string | null;
+  sync_last_error: string | null;
   review_started_at: string | null;
   review_duration_seconds: number | null;
   updated_at: string | null;
@@ -56,6 +59,7 @@ export interface WorkOrderData {
   caseDescription: string;
   caseStatus: string;
   caseAccountId: string;
+  stationName: string;
   custLevel1__c: string;
   projectName__c: string;
   projectProvince__c: string;
@@ -89,10 +93,26 @@ export interface WorkOrderData {
   [key: string]: unknown;
 }
 
+export interface WorkOrderValidationIssue {
+  code: string;
+  severity: 'blocking' | 'warning' | 'info';
+  field: string | null;
+  related_fields: string[];
+  message: string;
+}
+
+export interface WorkOrderValidation {
+  valid: boolean;
+  blocking_count: number;
+  warning_count: number;
+  issues: WorkOrderValidationIssue[];
+}
+
 export interface LockStatus {
   locked: boolean;
   owner?: string;
   locked_minutes?: number;
+  fencing_token?: number;
 }
 
 export interface AuditLogSession {

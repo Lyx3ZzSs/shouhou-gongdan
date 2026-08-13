@@ -5,8 +5,8 @@
   cd backend && source .venv/bin/activate && python scripts/seed_test_data.py
 
 功能:
-  1. 创建 ticket_source schema（如不存在）
-  2. 创建 v_ticket 视图
+  1. 创建源数据表（public）
+  2. 创建 ticket_view 视图
   3. 插入 20+ 条真实场景的 ticket 数据
   4. 幂等导入到 workorder_review
   5. 为部分工单设置不同的审核状态（已通过/驳回/暂存/同步失败等）
@@ -807,42 +807,38 @@ TICKETS = [
 # ── SQL 语句 ──────────────────────────────────────────
 
 CLEANUP_STATEMENTS = [
-    "DROP VIEW IF EXISTS v_ticket CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.ticket CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.source_message CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.wechat_user CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.project_info CASCADE",
+    "DROP VIEW IF EXISTS ticket_view CASCADE",
+    "DROP TABLE IF EXISTS ticket CASCADE",
+    "DROP TABLE IF EXISTS source_message CASCADE",
+    "DROP TABLE IF EXISTS wechat_user CASCADE",
+    "DROP TABLE IF EXISTS project_info CASCADE",
     "DELETE FROM bad_case_sample",
     "DELETE FROM workorder_audit_log",
     "DELETE FROM workorder_stash",
     "DELETE FROM workorder_review",
 ]
 
-CREATE_TICKET_SOURCE_SCHEMA = """
-CREATE SCHEMA IF NOT EXISTS ticket_source
-"""
-
 CREATE_TICKET_SOURCE_TABLES = [
     """
-    CREATE TABLE IF NOT EXISTS ticket_source.wechat_user (
+    CREATE TABLE IF NOT EXISTS wechat_user (
         user_id BIGINT PRIMARY KEY,
         nick_name VARCHAR(64) NOT NULL,
         source VARCHAR(64) NOT NULL
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS ticket_source.source_message (
+    CREATE TABLE IF NOT EXISTS source_message (
         id BIGINT PRIMARY KEY,
-        user_id BIGINT NOT NULL REFERENCES ticket_source.wechat_user(user_id),
+        user_id BIGINT NOT NULL REFERENCES wechat_user(user_id),
         source VARCHAR(64) NOT NULL,
         content TEXT
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS ticket_source.ticket (
+    CREATE TABLE IF NOT EXISTS ticket (
         id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
         ticket_no VARCHAR(100) NOT NULL UNIQUE,
-        source_id BIGINT REFERENCES ticket_source.source_message(id),
+        source_id BIGINT REFERENCES source_message(id),
         "ownerId" VARCHAR(64),
         "dimDepart" VARCHAR(128),
         "entityType" VARCHAR(32) DEFAULT '11010045500001',
@@ -881,7 +877,7 @@ CREATE_TICKET_SOURCE_TABLES = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS ticket_source.project_info (
+    CREATE TABLE IF NOT EXISTS project_info (
         "caseAccountId" VARCHAR(64) PRIMARY KEY,
         "custLevel1__c" VARCHAR(32),
         "projectName__c" VARCHAR(255),
@@ -895,10 +891,10 @@ CREATE_TICKET_SOURCE_TABLES = [
     """,
 ]
 
-DROP_V_TICKET = "DROP VIEW IF EXISTS v_ticket CASCADE"
+DROP_TICKET_VIEW = "DROP VIEW IF EXISTS ticket_view CASCADE"
 
-CREATE_V_TICKET = """
-CREATE VIEW v_ticket AS
+CREATE_TICKET_VIEW = """
+CREATE VIEW ticket_view AS
 SELECT
     t.id,
     t.ticket_no,
@@ -937,8 +933,8 @@ SELECT
     pi."serviceCycleEnd__c",
     pi."isOfflineApply__c",
     pi."isOverdueService__c"
-FROM ticket_source.ticket t
-LEFT JOIN ticket_source.project_info pi ON t."caseAccountId" = pi."caseAccountId"
+FROM ticket t
+LEFT JOIN project_info pi ON t."caseAccountId" = pi."caseAccountId"
 """
 
 
@@ -952,18 +948,16 @@ async def seed(engine) -> None:
         for stmt in CLEANUP_STATEMENTS:
             await db.execute(text(stmt))
 
-        # ── 1. 创建 ticket_source schema 和表 ──
-        print("📦 创建 ticket_source schema...")
-        await db.execute(text(CREATE_TICKET_SOURCE_SCHEMA))
-
+        # ── 1. 创建源数据表（public）──
+        print("📦 创建源数据表（public）...")
         for i, stmt in enumerate(CREATE_TICKET_SOURCE_TABLES):
             print(f"  → 创建表 {i+1}/{len(CREATE_TICKET_SOURCE_TABLES)}")
             await db.execute(text(stmt))
 
-        # ── 2. 创建 v_ticket 视图 ──
-        print("👁  创建 v_ticket 视图...")
-        await db.execute(text(DROP_V_TICKET))
-        await db.execute(text(CREATE_V_TICKET))
+        # ── 2. 创建 ticket_view 视图 ──
+        print("👁  创建 ticket_view 视图...")
+        await db.execute(text(DROP_TICKET_VIEW))
+        await db.execute(text(CREATE_TICKET_VIEW))
 
         # ── 3. 插入种子数据 ──
         print(f"🌱 插入 {len(TICKETS)} 条工单数据...")
@@ -974,7 +968,7 @@ async def seed(engine) -> None:
             user_counter += 1
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.wechat_user (user_id, nick_name, source)
+                    INSERT INTO wechat_user (user_id, nick_name, source)
                     VALUES (:uid, :nick, :source)
                     ON CONFLICT (user_id) DO NOTHING
                 """),
@@ -988,7 +982,7 @@ async def seed(engine) -> None:
             uid = 1001 + i
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.source_message (id, user_id, source, content)
+                    INSERT INTO source_message (id, user_id, source, content)
                     VALUES (:id, :uid, :source, :content)
                     ON CONFLICT (id) DO NOTHING
                 """),
@@ -1009,7 +1003,7 @@ async def seed(engine) -> None:
             seen_projects.add(aid)
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.project_info (
+                    INSERT INTO project_info (
                         "caseAccountId", "custLevel1__c", "projectName__c",
                         "projectProvince__c", "bigCustShortName__c",
                         "serviceCycleStart__c", "serviceCycleEnd__c",
@@ -1039,7 +1033,7 @@ async def seed(engine) -> None:
             msg_counter += 1
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.ticket (
+                    INSERT INTO ticket (
                         ticket_no, source_id,
                         "ownerId", "dimDepart", "entityType", name,
                         "caseSource", "feedbackChannel__c", "workOrderStatus__c",
@@ -1097,7 +1091,7 @@ async def seed(engine) -> None:
             )
 
         await db.commit()
-        print("  ✅ ticket_source 数据插入完成")
+        print("  ✅ 源数据插入完成")
 
         # ── 4. 幂等导入到 workorder_review ──
         print("📥 导入到 workorder_review...")

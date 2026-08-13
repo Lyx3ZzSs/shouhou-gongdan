@@ -50,7 +50,8 @@ export const FIELD_TEMPLATE: FieldDef[] = [
   { id: 'custLevel1__c', name: '客户级别', group: 'project', type: 'text', originalValue: 'A级' },
   { id: 'projectName__c', name: '项目名称', group: 'project', type: 'text', originalValue: 'XSJH20260723012', isKey: true },
   { id: 'projectProvince__c', name: '项目省份', group: 'project', type: 'text', originalValue: '广东' },
-  { id: 'caseAccountId', name: '场站名称', group: 'project', type: 'text', originalValue: 'SPCZ202408210132' },
+  { id: 'caseAccountId', name: '场站编号', group: 'project', type: 'text', originalValue: 'SPCZ202408210132' },
+  { id: 'stationName', name: '场站名称', group: 'project', type: 'text', originalValue: '测试风场', readonly: true },
 
   // ---- 服务周期 (service_period) ----
   { id: 'serviceCycleStart__c', name: '周期服务开始时间', group: 'service_period', type: 'datetime', originalValue: '1784797500' },
@@ -219,6 +220,9 @@ export function buildTicket(item: QueueItem): ReviewTicket {
     slaRemainingMin: item.slaRemainingMin,
     reviewer: '张三',
     version: isMain ? 2 : 1,
+    syncStatus: 'pending',
+    syncExternalId: null,
+    syncLastError: null,
     fields,
     anomalies,
     auditLogs,

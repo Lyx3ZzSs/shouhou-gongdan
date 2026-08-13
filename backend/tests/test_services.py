@@ -7,7 +7,8 @@ from app.schemas.review import FieldChange
 
 @pytest.mark.asyncio
 async def test_audit_service_batch_create():
-    db = AsyncMock()
+    db = MagicMock()
+    db.flush = AsyncMock()
     service = AuditService(db)
     changes = [
         FieldChange(op="replace", path="/problemType1__c", field_label="问题分类-1级",
@@ -32,7 +33,8 @@ async def test_audit_service_batch_create():
 
 @pytest.mark.asyncio
 async def test_bad_case_service_batch_create():
-    db = AsyncMock()
+    db = MagicMock()
+    db.flush = AsyncMock()
     service = BadCaseService(db)
     changes = [
         FieldChange(op="replace", path="/problemType1__c", field_label="问题分类-1级",

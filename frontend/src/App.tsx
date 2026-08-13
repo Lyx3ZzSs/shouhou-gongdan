@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, LogIn, Loader2 } from 'lucide-react';
 import { KeycloakProvider, MockAuthProvider } from './auth';
 import { useAuth } from './auth';
 import { authEnabled } from './auth/keycloak';
-import { ReviewWorkbench } from './workbench/ReviewWorkbench';
-import { ReviewStats } from './stats/ReviewStats';
 import { viewTransition } from '@/lib/animations';
 
 type View = 'workbench' | 'stats';
+const ReviewStats = lazy(() => import('./stats/ReviewStats'));
+const ReviewWorkbench = lazy(() => import('./workbench/ReviewWorkbench'));
 
 function AppContent() {
   const { initializing, authenticated, login } = useAuth();
@@ -78,6 +78,7 @@ function AppContent() {
   return (
     <AnimatePresence mode="wait">
       {view === 'stats' ? (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
         <motion.div
           key="stats"
           variants={viewTransition}
@@ -88,7 +89,9 @@ function AppContent() {
         >
           <ReviewStats onBack={() => setView('workbench')} />
         </motion.div>
+        </Suspense>
       ) : (
+        <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
         <motion.div
           key="workbench"
           variants={viewTransition}
@@ -99,6 +102,7 @@ function AppContent() {
         >
           <ReviewWorkbench onNavigateStats={() => setView('stats')} />
         </motion.div>
+        </Suspense>
       )}
     </AnimatePresence>
   );

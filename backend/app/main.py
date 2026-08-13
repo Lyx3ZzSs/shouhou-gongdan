@@ -14,6 +14,7 @@ if str(_BACKEND_DIR) not in sys.path:
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.routers import lock, review, stats
@@ -21,6 +22,7 @@ from app.services.lock_service import get_lock_service
 from app.services.review_service import recover_orphan_syncs
 from app.core.database import async_session, dispose_engine
 from app.core.config import settings
+from sqlalchemy import text
 
 # ---- Structured Logging ----
 logging.basicConfig(
@@ -73,8 +75,8 @@ async def lifespan(application: FastAPI):
         if exc is not None:
             logger.error("后台同步任务异常", exc_info=exc)
 
-    def _schedule_sync(fn, wid, key, sf) -> None:
-        task = asyncio.create_task(fn(wid, key, sf))
+    def _schedule_sync(fn, wid, key, sf, *args) -> None:
+        task = asyncio.create_task(fn(wid, key, sf, *args))
         background_tasks.add(task)
         task.add_done_callback(_on_task_done)
 
@@ -172,6 +174,36 @@ async def health_check():
         "status": "ok",
         "service": "shouhou-gongdan-backend",
     }
+
+
+@app.get("/ready")
+async def readiness_check():
+    """就绪探针：依赖与核心数据库契约均可用时才接收审核流量。"""
+    checks = {"database": False, "schema": False, "redis": False}
+    try:
+        async with async_session() as db:
+            await db.execute(text("SELECT 1"))
+            schema_ok = await db.scalar(text("""
+                SELECT to_regclass('public.ticket') IS NOT NULL
+                   AND to_regclass('public.ticket_view') IS NOT NULL
+                   AND to_regclass('public.workorder_review') IS NOT NULL
+                   AND to_regclass('public.review_submission') IS NOT NULL
+                   AND EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name='ticket_view'
+                         AND column_name='stationName'
+                   )
+            """))
+        checks["database"] = True
+        checks["schema"] = bool(schema_ok)
+    except Exception:
+        logger.warning("readiness database check failed", exc_info=True)
+    try:
+        checks["redis"] = bool(await get_lock_service().redis.ping())
+    except Exception:
+        logger.warning("readiness redis check failed", exc_info=True)
+    return ({"status": "ready", "checks": checks} if all(checks.values())
+            else JSONResponse(status_code=503, content={"status": "not_ready", "checks": checks}))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,12 @@
-import json
+import os
+
+# app.main 在收集期创建 engine，必须先提供格式合法的 URL；真正的数据库
+# 集成测试会自行创建隔离库，无数据库的纯单元测试不建立连接。
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres"
+)
+os.environ.setdefault("AUTH_ENABLED", "false")
 import pytest
-from unittest.mock import patch, MagicMock
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend

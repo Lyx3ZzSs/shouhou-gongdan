@@ -44,6 +44,7 @@ class FieldDef:
 class FieldConfig:
     groups: list[FieldGroupDef]
     fields: list[FieldDef]
+    review_rules: dict[str, Any] = field(default_factory=dict)
 
     @property
     def allowed_keys(self) -> set[str]:
@@ -109,7 +110,10 @@ def _parse_config(raw: dict[str, Any]) -> FieldConfig:
             options=item.get("options", []),
         ))
 
-    return FieldConfig(groups=groups, fields=fields)
+    return FieldConfig(
+        groups=groups, fields=fields,
+        review_rules=raw.get("review_rules", {}),
+    )
 
 
 @lru_cache(maxsize=1)

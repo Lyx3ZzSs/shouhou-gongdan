@@ -57,11 +57,11 @@ TICKET_DATA = {
 
 # ── 清理语句 ──
 CLEANUP_STATEMENTS = [
-    "DROP VIEW IF EXISTS v_ticket CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.ticket CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.source_message CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.wechat_user CASCADE",
-    "DROP TABLE IF EXISTS ticket_source.project_info CASCADE",
+    "DROP VIEW IF EXISTS ticket_view CASCADE",
+    "DROP TABLE IF EXISTS ticket CASCADE",
+    "DROP TABLE IF EXISTS source_message CASCADE",
+    "DROP TABLE IF EXISTS wechat_user CASCADE",
+    "DROP TABLE IF EXISTS project_info CASCADE",
     "DELETE FROM bad_case_sample",
     "DELETE FROM workorder_audit_log",
     "DELETE FROM workorder_stash",
@@ -82,30 +82,28 @@ async def main():
             await db.commit()
             print("  ✅ 清理完成")
 
-            # ── 2. 重建 schema 和表 ──
-            print("📦 重建 ticket_source schema 和表...")
-            await db.execute(text("CREATE SCHEMA IF NOT EXISTS ticket_source"))
-
+            # ── 2. 重建源数据表（public）──
+            print("📦 重建源数据表（public）...")
             await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS ticket_source.wechat_user (
+                CREATE TABLE IF NOT EXISTS wechat_user (
                     user_id BIGINT PRIMARY KEY,
                     nick_name VARCHAR(64) NOT NULL,
                     source VARCHAR(64) NOT NULL
                 )
             """))
             await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS ticket_source.source_message (
+                CREATE TABLE IF NOT EXISTS source_message (
                     id BIGINT PRIMARY KEY,
-                    user_id BIGINT NOT NULL REFERENCES ticket_source.wechat_user(user_id),
+                    user_id BIGINT NOT NULL REFERENCES wechat_user(user_id),
                     source VARCHAR(64) NOT NULL,
                     content TEXT
                 )
             """))
             await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS ticket_source.ticket (
+                CREATE TABLE IF NOT EXISTS ticket (
                     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                     ticket_no VARCHAR(100) NOT NULL UNIQUE,
-                    source_id BIGINT REFERENCES ticket_source.source_message(id),
+                    source_id BIGINT REFERENCES source_message(id),
                     "ownerId" VARCHAR(64),
                     "dimDepart" VARCHAR(128),
                     "entityType" VARCHAR(32) DEFAULT '11010045500001',
@@ -144,7 +142,7 @@ async def main():
                 )
             """))
             await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS ticket_source.project_info (
+                CREATE TABLE IF NOT EXISTS project_info (
                     "caseAccountId" VARCHAR(64) PRIMARY KEY,
                     "custLevel1__c" VARCHAR(32),
                     "projectName__c" VARCHAR(255),
@@ -159,11 +157,11 @@ async def main():
             await db.commit()
             print("  ✅ 表结构就绪")
 
-            # ── 3. 重建 v_ticket 视图 ──
-            print("👁  重建 v_ticket 视图...")
-            await db.execute(text("DROP VIEW IF EXISTS v_ticket CASCADE"))
+            # ── 3. 重建 ticket_view 视图 ──
+            print("👁  重建 ticket_view 视图...")
+            await db.execute(text("DROP VIEW IF EXISTS ticket_view CASCADE"))
             await db.execute(text("""
-                CREATE VIEW v_ticket AS
+                CREATE VIEW ticket_view AS
                 SELECT
                     t.id, t.ticket_no,
                     t."ownerId", t."dimDepart", t."entityType", t.name,
@@ -179,28 +177,28 @@ async def main():
                     pi."projectProvince__c", pi."bigCustShortName__c",
                     pi."serviceCycleStart__c", pi."serviceCycleEnd__c",
                     pi."isOfflineApply__c", pi."isOverdueService__c"
-                FROM ticket_source.ticket t
-                LEFT JOIN ticket_source.project_info pi ON t."caseAccountId" = pi."caseAccountId"
+                FROM ticket t
+                LEFT JOIN project_info pi ON t."caseAccountId" = pi."caseAccountId"
             """))
             await db.commit()
-            print("  ✅ v_ticket 视图就绪")
+            print("  ✅ ticket_view 视图就绪")
 
             # ── 4. 插入辅助数据 ──
             print("🌱 插入辅助数据...")
             # wechat_user
             await db.execute(
-                text("INSERT INTO ticket_source.wechat_user (user_id, nick_name, source) VALUES (:uid, :nick, :source) ON CONFLICT DO NOTHING"),
+                text("INSERT INTO wechat_user (user_id, nick_name, source) VALUES (:uid, :nick, :source) ON CONFLICT DO NOTHING"),
                 {"uid": 9999, "nick": TICKET_DATA["initiator"], "source": TICKET_DATA["initiator_dept"]},
             )
             # source_message
             await db.execute(
-                text("INSERT INTO ticket_source.source_message (id, user_id, source, content) VALUES (:id, :uid, :source, :content) ON CONFLICT DO NOTHING"),
+                text("INSERT INTO source_message (id, user_id, source, content) VALUES (:id, :uid, :source, :content) ON CONFLICT DO NOTHING"),
                 {"id": 9999, "uid": 9999, "source": TICKET_DATA["feedbackChannel__c"], "content": TICKET_DATA["caseDescription"][:200]},
             )
             # project_info
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.project_info (
+                    INSERT INTO project_info (
                         "caseAccountId", "custLevel1__c", "projectName__c",
                         "projectProvince__c", "bigCustShortName__c",
                         "serviceCycleStart__c", "serviceCycleEnd__c",
@@ -223,7 +221,7 @@ async def main():
             # ticket
             await db.execute(
                 text("""
-                    INSERT INTO ticket_source.ticket (
+                    INSERT INTO ticket (
                         ticket_no, source_id,
                         "ownerId", "dimDepart", "entityType", name,
                         "caseSource", "feedbackChannel__c", "workOrderStatus__c",
@@ -290,12 +288,12 @@ async def main():
         # ── 6. 验证 ──
         print("\n🔍 验证数据...")
         async with async_session() as db:
-            # v_ticket 查询
+            # ticket_view 查询
             r = await db.execute(
-                text("SELECT ticket_no, name, \"caseAccountId\", \"projectName__c\" FROM v_ticket")
+                text("SELECT ticket_no, name, \"caseAccountId\", \"projectName__c\" FROM ticket_view")
             )
             rows = r.mappings().all()
-            print(f"  v_ticket 记录数: {len(rows)}")
+            print(f"  ticket_view 记录数: {len(rows)}")
             for row in rows:
                 print(f"    {row['ticket_no']} | {row['name']} | {row['caseAccountId']} | {row['projectName__c']}")
 

@@ -90,7 +90,7 @@ function useChart(
 // ── 主组件 ──
 interface Props { onBack: () => void }
 
-export function ReviewStats({ onBack }: Props) {
+export default function ReviewStats({ onBack }: Props) {
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [trends, setTrends] = useState<TrendPoint[]>([]);
   const [reviewers, setReviewers] = useState<ReviewerStat[]>([]);

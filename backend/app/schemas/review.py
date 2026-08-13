@@ -1,6 +1,9 @@
 from datetime import datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Any, Literal
+from pydantic import Field
+
+from app.services.review_validation import ValidationResult
 
 from app.core.field_config import load_field_config
 
@@ -42,6 +45,13 @@ class FieldChange(BaseModel):
             raise ValueError("path must start with '/'")
         return v
 
+    @field_validator("new_value")
+    @classmethod
+    def remove_must_not_carry_value(cls, v: Any, info):
+        if info.data.get("op") == "remove" and v is not None:
+            raise ValueError("remove 操作的 new_value 必须为空")
+        return v
+
 
 class WorkOrderSummary(BaseModel):
     """Summary row for GET /api/workorders list."""
@@ -58,12 +68,11 @@ class WorkOrderSummary(BaseModel):
     def coerce_created_at(cls, v: datetime | str | None) -> str | None:
         return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkOrderResponse(BaseModel):
-    """Response for GET /api/workorders/{id} — merges v_ticket business fields + workorder_review metadata."""
+    """Response for GET /api/workorders/{id} — merges ticket_view business fields + workorder_review metadata."""
     id: str
     version: int
     ticket_no: str | None = None
@@ -78,8 +87,11 @@ class WorkOrderResponse(BaseModel):
     initiator: str | None = None
     initiator_department: str | None = None
     field_overrides: dict | None = None
+    original_data: dict[str, Any] | None = None
+    validation: ValidationResult | None = None
     sync_status: str | None = None
     sync_external_id: str | None = None
+    sync_last_error: str | None = None
     review_started_at: str | None = None
     review_duration_seconds: int | None = None
 
@@ -106,6 +118,7 @@ class WorkOrderResponse(BaseModel):
     serviceCycleEnd__c: str | None = None
     isOfflineApply__c: str | None = None
     isOverdueService__c: str | None = None
+    stationName: str | None = None
     problemLevel__c: str | None = None
     problemType1__c: str | None = None
     problemType2__c: str | None = None
@@ -131,16 +144,16 @@ class WorkOrderResponse(BaseModel):
     def coerce_datetime_fields(cls, v: datetime | str | None) -> str | None:
         return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReviewRequest(BaseModel):
     session_id: str
     version: int
-    changes: list[FieldChange] = []
+    changes: list[FieldChange] = Field(default_factory=list)
     reject_reason: str | None = None
     review_notes: str | None = None
+    lock_fencing_token: int
 
     _validate_reject_reason = field_validator("reject_reason")(_validate_reject_reason_not_empty)
     _validate_review_notes = field_validator("review_notes")(_validate_review_notes_length)
@@ -150,10 +163,11 @@ class ConfirmRequest(BaseModel):
     """确认提交请求 — 新增 idempotency_key 用于销售易幂等去重。"""
     session_id: str
     version: int
-    changes: list[FieldChange] = []
+    changes: list[FieldChange] = Field(default_factory=list)
     reject_reason: str | None = None
     review_notes: str | None = None
     idempotency_key: str
+    lock_fencing_token: int
 
     _validate_reject_reason = field_validator("reject_reason")(_validate_reject_reason_not_empty)
     _validate_review_notes = field_validator("review_notes")(_validate_review_notes_length)
@@ -187,7 +201,7 @@ class ConfirmResponse(BaseModel):
     change_count: int
     bad_case_count: int
     next_review_status: str  # was: next_status
-    sync_status: Literal["pending", "syncing", "synced", "failed"] = "pending"
+    sync_status: Literal["pending", "syncing", "synced", "failed", "uncertain"] = "pending"
 
 
 class StashRequest(BaseModel):
@@ -196,15 +210,16 @@ class StashRequest(BaseModel):
     mode='manual': 标记工单为 stashed，释放编辑锁。
     mode='auto_save': 仅保存进度，不改变工单状态，不释放锁。
     """
-    field_states: dict[str, Any] = {}  # fieldId → {currentValue, status, changeReason, ...}
+    field_states: dict[str, Any] = Field(default_factory=dict)  # fieldId → {currentValue, status, changeReason, ...}
     notes: str = ""
     mode: Literal["manual", "auto_save"] = "manual"
+    lock_fencing_token: int
     _validate_notes = field_validator("notes")(_validate_review_notes_length)
 
 
 class StashData(BaseModel):
     """Response for GET /api/workorders/{id}/stash"""
-    field_states: dict[str, Any] = {}
+    field_states: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
     updated_at: str | None = None
 
@@ -227,3 +242,4 @@ class LockStatus(BaseModel):
     owner: str | None = None
     locked_minutes: int | None = None
     status: str | None = None
+    fencing_token: int | None = None

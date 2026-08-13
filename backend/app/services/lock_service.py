@@ -8,6 +8,7 @@ import redis.exceptions
 from app.core.config import settings
 
 LOCK_PREFIX = "review_lock:"
+FENCE_PREFIX = "review_fence:"
 LOCK_TTL = 300  # 5 分钟
 
 
@@ -24,6 +25,19 @@ def get_lock_service():
 
 
 class LockService:
+    _ACQUIRE_SCRIPT = """
+    if redis.call('exists', KEYS[1]) == 0 then
+        local current = tonumber(redis.call('get', KEYS[2]) or '0')
+        local floor = tonumber(ARGV[3])
+        if current < floor then redis.call('set', KEYS[2], floor) end
+        local token = redis.call('incr', KEYS[2])
+        local value = cjson.decode(ARGV[1])
+        value['fencing_token'] = token
+        redis.call('set', KEYS[1], cjson.encode(value), 'ex', ARGV[2])
+        return {1, token}
+    end
+    return {0, 0}
+    """
     # Lua 脚本：原子化 release 和 heartbeat，消除 TOCTOU 竞态
     _RELEASE_SCRIPT = """
     if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -56,6 +70,7 @@ class LockService:
         self._release_sha: str | None = None
         self._heartbeat_sha: str | None = None
         self._refresh_sha: str | None = None
+        self._acquire_sha: str | None = None
 
     @property
     def redis(self):
@@ -69,16 +84,24 @@ class LockService:
             self._loop_id = current_loop_id
             self._release_sha = None
             self._heartbeat_sha = None
+            self._refresh_sha = None
+            self._acquire_sha = None
         return self._redis
 
     @staticmethod
-    def _encode_value(operator_id: str, operator_name: str, locked_at: str) -> str:
+    def _encode_value(
+        operator_id: str, operator_name: str, locked_at: str,
+        fencing_token: int | None = None,
+    ) -> str:
         """将锁值编码为 JSON，避免冒号等特殊字符导致解析错误。"""
-        return json.dumps({
+        value = {
             "operator_id": operator_id,
             "operator_name": operator_name,
             "locked_at": locked_at,
-        }, ensure_ascii=False)
+        }
+        if fencing_token is not None:
+            value["fencing_token"] = fencing_token
+        return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
     def _decode_value(raw: bytes) -> dict:
@@ -145,16 +168,31 @@ class LockService:
             self._refresh_sha = sha
             return await self.redis.evalsha(sha, 1, key, old_value, new_value, ttl)
 
-    async def acquire(self, workorder_id: str, operator_id: str, operator_name: str) -> dict:
+    async def acquire(
+        self, workorder_id: str, operator_id: str, operator_name: str,
+        token_floor: int = 0,
+    ) -> dict:
         """获取锁。返回 {locked, owner, locked_minutes?}"""
         key = f"{LOCK_PREFIX}{workorder_id}"
         now = datetime.now(timezone.utc).isoformat()
         value = self._encode_value(operator_id, operator_name, now)
 
-        # 原子尝试获取锁：SET NX 只在 key 不存在时写入
-        ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
+        fence_key = f"{FENCE_PREFIX}{workorder_id}"
+        client = self.redis
+        if self._acquire_sha is None:
+            self._acquire_sha = await client.script_load(self._ACQUIRE_SCRIPT)
+        try:
+            ok, token = await client.evalsha(
+                self._acquire_sha, 2, key, fence_key, value, LOCK_TTL, token_floor,
+            )
+        except redis.exceptions.NoScriptError:
+            self._acquire_sha = await client.script_load(self._ACQUIRE_SCRIPT)
+            ok, token = await client.evalsha(
+                self._acquire_sha, 2, key, fence_key, value, LOCK_TTL, token_floor,
+            )
         if ok:
-            return {"locked": True, "owner": operator_name, "is_new": True}
+            return {"locked": True, "owner": operator_name, "is_new": True,
+                    "fencing_token": int(token)}
 
         # 锁已被他人持有，读取持有者信息
         existing = await self.redis.get(key)
@@ -167,10 +205,13 @@ class LockService:
                 # 幂等：同一持有者重复获取，原子化刷新值 + TTL（消除 TOCTOU 窗口）
                 now = datetime.now(timezone.utc).isoformat()
                 old_value = existing.decode()
-                new_value = self._encode_value(operator_id, owner_name, now)
+                new_value = self._encode_value(
+                    operator_id, owner_name, now, data.get("fencing_token"),
+                )
                 result = await self._eval_refresh(key, old_value, new_value, LOCK_TTL)
                 if result:
-                    return {"locked": True, "owner": owner_name, "is_new": False}
+                    return {"locked": True, "owner": owner_name, "is_new": False,
+                            "fencing_token": data.get("fencing_token")}
                 # 原子刷新失败 — 锁已被他人获取或已过期
                 return {"locked": False, "owner": "unknown", "is_new": False}
             else:
@@ -182,14 +223,12 @@ class LockService:
                 locked_minutes = max(1, int(elapsed / 60) + 1)
                 return {"locked": False, "owner": owner_name, "locked_minutes": locked_minutes, "is_new": False}
 
-        # 锁在 SET NX 和 GET 之间过期（极端情况），重试一次 SET NX
-        ok = await self.redis.set(key, value, nx=True, ex=LOCK_TTL)
-        if ok:
-            return {"locked": True, "owner": operator_name, "is_new": True}
-        # 仍然失败，返回已锁定
-        return {"locked": False, "owner": "unknown", "is_new": False}
+        # 锁在获取和读取之间过期，重试并生成新的单调 token。
+        return await self.acquire(workorder_id, operator_id, operator_name, token_floor)
 
-    async def release(self, workorder_id: str, operator_id: str) -> None:
+    async def release(
+        self, workorder_id: str, operator_id: str, fencing_token: int | None = None,
+    ) -> None:
         """释放锁（原子）。仅持有者可释放，否则抛出 PermissionError"""
         key = f"{LOCK_PREFIX}{workorder_id}"
         # 先读当前值构造完整 value（Lua 脚本需要完整匹配）
@@ -200,12 +239,14 @@ class LockService:
         data = self._decode_value(existing)
         if data["operator_id"] != operator_id:
             raise PermissionError("仅锁持有者可释放")
+        if fencing_token is not None and data.get("fencing_token") != fencing_token:
+            raise PermissionError("编辑锁租约已失效")
 
         result = await self._eval_release(key, value)
         if result == 0:
             raise PermissionError("锁已被他人获取或已过期")
 
-    async def heartbeat(self, workorder_id: str, operator_id: str) -> None:
+    async def heartbeat(self, workorder_id: str, operator_id: str, fencing_token: int) -> None:
         """心跳续期（原子）。仅持有者可续期，否则抛出 LockLostError"""
         key = f"{LOCK_PREFIX}{workorder_id}"
         existing = await self.redis.get(key)
@@ -215,6 +256,8 @@ class LockService:
         data = self._decode_value(existing)
         if data["operator_id"] != operator_id:
             raise LockLostError("编辑锁已被他人获取，请刷新页面")
+        if data.get("fencing_token") != fencing_token:
+            raise LockLostError("编辑锁租约已失效，请刷新页面")
 
         result = await self._eval_heartbeat(key, value, LOCK_TTL)
         if result == 0:
@@ -231,6 +274,7 @@ class LockService:
             "operator_id": data["operator_id"],
             "operator_name": data["operator_name"],
             "locked_at": data["locked_at"],
+            "fencing_token": data.get("fencing_token"),
         }
 
     async def close(self) -> None:

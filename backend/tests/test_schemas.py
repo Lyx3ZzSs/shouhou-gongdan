@@ -24,6 +24,7 @@ def test_review_request_confirm():
             )
         ],
         reject_reason=None,
+        lock_fencing_token=1,
     )
     assert req.reject_reason is None
     assert len(req.changes) == 1
@@ -34,6 +35,7 @@ def test_review_request_reject():
         version=1,
         changes=[],
         reject_reason="分类与客户描述不符",
+        lock_fencing_token=1,
     )
     assert req.reject_reason == "分类与客户描述不符"
 
@@ -46,7 +48,7 @@ def test_allowed_fields_contains_required():
     assert "problemResponsible__c" in ALLOWED_FIELDS
     assert "custLevel1__c" in ALLOWED_FIELDS
     assert "workOrderStatus__c" in ALLOWED_FIELDS
-    assert "defectFlag__c" in ALLOWED_FIELDS
+    assert "defectFlag__c" not in ALLOWED_FIELDS
 
 def test_field_change_rejects_invalid_op():
     with pytest.raises(ValueError):
@@ -57,3 +59,8 @@ def test_field_change_rejects_invalid_op():
             old_value=None,
             new_value=None,
         )
+
+
+def test_remove_rejects_non_empty_new_value():
+    with pytest.raises(ValueError):
+        FieldChange(op="remove", path="/remark__c", field_label="备注", new_value="绕过值")

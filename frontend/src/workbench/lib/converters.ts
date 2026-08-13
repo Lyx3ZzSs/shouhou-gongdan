@@ -277,7 +277,8 @@ const FIELD_MAPPING: FieldMapping[] = [
   { backendKey: 'custLevel1__c', id: 'custLevel1__c', name: '客户级别', group: 'project', type: 'text' },
   { backendKey: 'projectName__c', id: 'projectName__c', name: '项目名称', group: 'project', type: 'text', isKey: true },
   { backendKey: 'projectProvince__c', id: 'projectProvince__c', name: '项目省份', group: 'project', type: 'text' },
-  { backendKey: 'caseAccountId', id: 'caseAccountId', name: '场站名称', group: 'project', type: 'text' },
+  { backendKey: 'caseAccountId', id: 'caseAccountId', name: '场站编号', group: 'project', type: 'text' },
+  { backendKey: 'stationName', id: 'stationName', name: '场站名称', group: 'project', type: 'text', readonly: true },
 
   // ---- 服务周期 (service_period) ----
   { backendKey: 'serviceCycleStart__c', id: 'serviceCycleStart__c', name: '周期服务开始时间', group: 'service_period', type: 'datetime' },
@@ -376,6 +377,9 @@ export function workOrderDataToReviewTicket(
     slaRemainingMin: computeSlaMinutes((dataRec.requireSolveTime__c as string) ?? null),
     reviewer: getCurrentUserName(),
     version: data.version,
+    syncStatus: ((dataRec.sync_status as ReviewTicket['syncStatus']) ?? 'pending'),
+    syncExternalId: (dataRec.sync_external_id as string | null) ?? null,
+    syncLastError: (dataRec.sync_last_error as string | null) ?? null,
     fields,
     anomalies,
     auditLogs,
@@ -383,14 +387,18 @@ export function workOrderDataToReviewTicket(
 }
 
 function buildFieldDefs(data: GeneratedWorkOrderResponse): FieldDef[] {
+  const dataRecord = data as Record<string, unknown>;
+  const originalData = (dataRecord.original_data ?? {}) as Record<string, unknown>;
   return FIELD_MAPPING.map((m) => {
-    const raw = (data as Record<string, unknown>)[m.backendKey];
-    const originalValue = raw == null ? '' : raw;
+    const raw = dataRecord[m.backendKey];
+    const originalRaw = originalData[m.backendKey];
+    const originalValue = originalRaw == null ? (raw == null ? '' : raw) : originalRaw;
     return {
       id: m.id,
       name: m.name,
       group: m.group,
       originalValue,
+      currentValue: raw == null ? '' : raw,
       systemSuggestion: undefined,
       required: m.required,
       type: m.type,
@@ -412,6 +420,19 @@ export function generateAnomalies(
   const anomalies: Anomaly[] = [];
   let idx = 0;
   const dataRecord = data as Record<string, unknown>;
+  const validation = dataRecord.validation as {
+    issues?: Array<{ code: string; severity: 'blocking' | 'warning' | 'info'; field: string | null; message: string }>;
+  } | null | undefined;
+
+  if (validation?.issues) {
+    return validation.issues.map((issue, index) => ({
+      id: `validation-${index}`,
+      code: issue.code,
+      type: issue.severity === 'blocking' ? 'blocking_error' : issue.severity,
+      fieldId: issue.field ?? undefined,
+      message: issue.message,
+    }));
+  }
 
   for (const m of FIELD_MAPPING) {
     const value = dataRecord[m.backendKey];

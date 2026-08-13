@@ -293,7 +293,7 @@ async def analyze_code_doc_alignment(config: TestConfig):
     # 读取现有 DB 数据，检查格式兼容性
     try:
         from app.core.database import async_session
-        from app.models.ticket import VTicket
+        from app.models.ticket import TicketView
         from sqlalchemy import select
     except ImportError as e:
         print(f"  ⚠ 无法导入 app 模块: {e}")
@@ -303,7 +303,7 @@ async def analyze_code_doc_alignment(config: TestConfig):
     issues = []
 
     async with async_session() as db:
-        r = await db.execute(select(VTicket))
+        r = await db.execute(select(TicketView))
         tickets = r.scalars().all()
 
         for t in tickets[:5]:  # 采样前 5 条
@@ -398,17 +398,17 @@ async def test_full_pipeline(config: TestConfig, token_info: dict[str, str]):
             print("  ⚠ 无可用工单")
             return
 
-        # 获取 v_ticket 数据
+        # 获取 ticket_view 数据
         r = await db.execute(
-            text("SELECT * FROM v_ticket WHERE ticket_no = :tn"),
+            text("SELECT * FROM ticket_view WHERE ticket_no = :tn"),
             {"tn": wo_row["ticket_no"]},
         )
         ticket_row = r.mappings().first()
         if ticket_row is None:
-            print(f"  ❌ ticket_no={wo_row['ticket_no']} 在 v_ticket 中不存在")
+            print(f"  ❌ ticket_no={wo_row['ticket_no']} 在 ticket_view 中不存在")
             return
 
-        # merge: v_ticket 原始值 + field_overrides 覆盖
+        # merge: ticket_view 原始值 + field_overrides 覆盖
         ticket_dict = dict(ticket_row)
         overrides = wo_row.get("field_overrides") or {}
         merged = {**ticket_dict, **overrides}
@@ -417,7 +417,7 @@ async def test_full_pipeline(config: TestConfig, token_info: dict[str, str]):
         print(f"  overrides: {json.dumps(overrides, ensure_ascii=False)}")
 
         # 构建请求
-        req = map_db_to_xiaoshouyi(merged, f"test-{wo_row['id'][:8]}")
+        req = map_db_to_xiaoshouyi(merged)
         body = req.to_api_body()
         print(f"\n  --- 实际发送的 API Body ---")
         print(f"  {json.dumps(body, ensure_ascii=False, indent=4)[:2000]}")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import BigInteger, Column, Integer, String, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -6,18 +6,19 @@ from .base import Base
 
 
 class WorkOrderReview(Base):
-    """审核元数据表 — 仅包含审核/同步相关列，业务数据通过 v_ticket 视图获取。"""
+    """审核元数据表 — 仅包含审核/同步相关列，业务数据通过 ticket_view 视图获取。"""
 
     __tablename__ = "workorder_review"
 
     # Primary key
     id = Column(String(64), primary_key=True)
 
-    # FK to ticket_source.ticket (via ticket_no, not DB FK)
+    # FK to ticket (via ticket_no, not DB FK)
     ticket_no = Column(String(100), nullable=False, unique=True)
 
     # Optimistic locking
     version = Column(Integer, default=1, nullable=False)
+    lock_fencing_token = Column(BigInteger, default=0, nullable=False)
 
     # Review status
     review_status = Column(String(32), nullable=False, default='pending_review')
@@ -36,7 +37,7 @@ class WorkOrderReview(Base):
     review_started_at = Column(DateTime(timezone=True), nullable=True)
     review_duration_seconds = Column(Integer, nullable=True)
 
-    # Review edits (JSONB overrides over v_ticket values)
+    # Review edits (JSONB overrides over ticket_view values)
     field_overrides = Column(JSONB, nullable=False, default=dict)
 
     # Sync to 销售易
@@ -47,7 +48,7 @@ class WorkOrderReview(Base):
     sync_external_id = Column(String(64), nullable=True)
     sync_started_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Initiator info (denormalized from ticket_source at import time)
+    # Initiator info (denormalized from ticket at import time)
     initiator = Column(String(64), nullable=True)
     initiator_department = Column(String(128), nullable=True)
 

@@ -37,8 +37,11 @@ export function useReviewLock(workorderId: string | undefined) {
         if (cancelled) return;
 
         if (status.locked) {
+          if (status.fencing_token === undefined) throw new Error('锁服务未返回 fencing token');
+          const fencingToken = status.fencing_token;
           // 锁获取成功 — 启动心跳
-          useReviewStore.setState({ beingEditedBy: null, lockState: 'locked' });
+          useReviewStore.setState({ beingEditedBy: null, lockState: 'locked',
+            lockFencingToken: status.fencing_token });
           clearHeartbeat();
           let heartbeatFailures = 0;
           heartbeatTimerRef.current = setInterval(async () => {
@@ -50,7 +53,7 @@ export function useReviewLock(workorderId: string | undefined) {
               return;
             }
             try {
-              const result = await heartbeatLock(workorderId);
+              const result = await heartbeatLock(workorderId, fencingToken);
               heartbeatFailures = 0; // 成功后重置计数
               if (result === 'lost') {
                 useReviewStore.setState({
@@ -88,7 +91,8 @@ export function useReviewLock(workorderId: string | undefined) {
     return () => {
       cancelled = true;
       clearHeartbeat();
-      releaseLock(workorderId).catch(() => {
+      const token = useReviewStore.getState().lockFencingToken;
+      if (token !== null) releaseLock(workorderId, token).catch(() => {
         // 锁可能已过期，忽略
       });
     };
@@ -99,8 +103,11 @@ export function useReviewLock(workorderId: string | undefined) {
     if (!workorderId) return;
 
     const handleBeforeUnload = () => {
+      const token = useReviewStore.getState().lockFencingToken;
+      if (token === null) return;
       fetch(`/api/workorders/${workorderId}/lock`, {
         method: 'DELETE',
+        headers: { 'X-Lock-Fencing-Token': String(token) },
         keepalive: true,
       });
     };

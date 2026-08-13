@@ -1,13 +1,13 @@
-"""v_ticket 视图模型 — 只读，映射 ticket_source.ticket LEFT JOIN project_info。"""
+"""ticket_view 服务工单视图模型 — 只读，映射现行 8 张源表。"""
 
-from sqlalchemy import Column, String, BigInteger, Text
+from sqlalchemy import Column, String, BigInteger, Text, DateTime
 from .base import Base
 
 
-class VTicket(Base):
-    """v_ticket 视图 — 工单业务数据的统一查询入口（只读）。"""
+class TicketView(Base):
+    """ticket_view — 服务工单业务数据的唯一查询入口。"""
 
-    __tablename__ = "v_ticket"
+    __tablename__ = "ticket_view"
 
     # ticket 标识
     id = Column(BigInteger, primary_key=True)
@@ -51,6 +51,8 @@ class VTicket(Base):
     serviceCycleEnd__c = Column(String)
     isOfflineApply__c = Column(String(4))
     isOverdueService__c = Column(String)
+    stationName = Column(String(200))
+    source_created_at = Column(DateTime(timezone=True))
 
     def to_dict(self) -> dict:
         """将视图行转为 dict，方便 merge 操作。"""

@@ -18,23 +18,33 @@ export function useAutoSave() {
   dirtyRef.current = dirty;
   const ticketRef = useRef(ticketId);
   ticketRef.current = ticketId;
+  const saveSequence = useRef(0);
 
   // dirty + 'saving' → 1s 后发起真实 stash API 调用
   useEffect(() => {
     if (!dirty || autoSaveStatus !== 'saving' || !ticketId) return;
+    const store = useReviewStore.getState();
+    const fieldStates = Object.fromEntries(
+      Object.entries(store.fieldStates).map(([id, fs]) => [
+        id,
+        { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
+      ]),
+    );
+    if (store.lockFencingToken === null) return;
+    const snapshot = { ticketId, fieldStates, notes: store.notes,
+      fencingToken: store.lockFencingToken };
+    const sequence = ++saveSequence.current;
     const t = setTimeout(async () => {
       try {
-        const store = useReviewStore.getState();
-        const fieldStates = Object.fromEntries(
-          Object.entries(store.fieldStates).map(([id, fs]) => [
-            id,
-            { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
-          ]),
-        );
-        await stashWorkOrder(ticketId, fieldStates, store.notes, 'auto_save');
-        setAutoSaveStatus('saved');
+        await stashWorkOrder(snapshot.ticketId, snapshot.fieldStates, snapshot.notes,
+          'auto_save', snapshot.fencingToken);
+        if (sequence === saveSequence.current && useReviewStore.getState().ticket?.id === snapshot.ticketId) {
+          setAutoSaveStatus('saved');
+        }
       } catch {
-        setAutoSaveStatus('failed');
+        if (sequence === saveSequence.current && useReviewStore.getState().ticket?.id === snapshot.ticketId) {
+          setAutoSaveStatus('failed');
+        }
       }
     }, 1000);
     return () => clearTimeout(t);

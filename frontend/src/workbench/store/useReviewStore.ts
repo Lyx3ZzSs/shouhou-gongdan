@@ -34,6 +34,7 @@ import {
   deleteStashData,
   ConflictError,
   LockLostError,
+  ValidationError,
 } from '../../api/review';
 import {
   workOrderSummaryToQueueItem,
@@ -43,6 +44,7 @@ import {
 } from '../lib/converters';
 
 let _uid = 0;
+const submitKeys = new Map<string, string>();
 function uid(prefix = 'id'): string {
   _uid += 1;
   return `${prefix}-${_uid}`;
@@ -71,7 +73,7 @@ function computeBaseline(field: FieldDef, anomalies: Anomaly[]): FieldReviewStat
 }
 
 function isAnomalyResolved(a: Anomaly, states: Record<string, FieldState>): boolean {
-  if (!a.fieldId) return true;
+  if (!a.fieldId) return a.type !== 'blocking_error';
   const fs = states[a.fieldId];
   if (!fs) return false;
   if (a.type === 'blocking_error') return fs.status === 'modified';
@@ -84,7 +86,7 @@ function buildFieldStates(ticket: ReviewTicket): Record<string, FieldState> {
     const baseline = computeBaseline(f, ticket.anomalies);
     states[f.id] = {
       fieldId: f.id,
-      currentValue: f.originalValue,
+      currentValue: f.currentValue ?? f.originalValue,
       baselineStatus: baseline,
       status: baseline,
       changeReason: undefined,
@@ -159,6 +161,7 @@ interface ReviewStore {
   conflict: ConflictInfo | null;
   beingEditedBy: string | null;
   lockState: 'acquiring' | 'locked' | 'lost' | 'error' | 'released';  // F2: 锁丢失强阻塞；released=提交成功后终态，锁已由后端释放
+  lockFencingToken: number | null;
   dirty: boolean;
   pendingSwitchId: string | null;
   currentLoadId: number;  // F4: 切单竞态保护
@@ -168,6 +171,8 @@ interface ReviewStore {
   submitDialogOpen: boolean;
   submitting: boolean;
   submittedToast: string | null;
+  /** 操作被拦截时的轻量错误提示（如已确认工单禁止编辑） */
+  errorNotice: string | null;
   queueEmpty: boolean;
 
   // UI
@@ -206,6 +211,8 @@ interface ReviewStore {
   closeSubmitDialog: () => void;
   submit: (decision: ReviewDecision, openNext: boolean) => Promise<void>;
   clearSubmittedToast: () => void;
+  setErrorNotice: (msg: string) => void;
+  clearErrorNotice: () => void;
 
   resolveConflict: (mode: 'merge' | 'discard') => void;
   triggerConflictDemo: () => void;
@@ -225,7 +232,8 @@ interface ReviewStore {
 }
 
 const defaultFilters: QueueFilters = {
-  status: 'all',
+  // 默认只展示待审核工单，避免用户误入已确认/已暂存等不可编辑工单
+  status: 'pending_review',
   type: 'all',
   source: 'all',
   sla: 'all',
@@ -254,6 +262,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   conflict: null,
   beingEditedBy: null,
   lockState: 'acquiring',
+  lockFencingToken: null,
   dirty: false,
   pendingSwitchId: null,
   currentLoadId: 0,
@@ -262,6 +271,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   submitDialogOpen: false,
   submitting: false,
   submittedToast: null,
+  errorNotice: null,
   queueEmpty: false,
 
   density: 'standard',
@@ -281,16 +291,31 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      const summaries = await fetchWorkOrderList();
+      const status = get().filters.status;
+      const summaries = await fetchWorkOrderList(status === 'all' ? undefined : status);
       const queue: QueueItem[] = summaries.map(workOrderSummaryToQueueItem);
+      const first = queue.find((i) => matchFilters(i, get().filters));
 
-      if (queue.length === 0) {
-        set({ queue, queueLoading: false, sessionId, queueEmpty: true });
+      if (!first) {
+        set((s) => ({
+          queue,
+          selectedId: null,
+          ticket: null,
+          fieldStates: {},
+          changeLog: [],
+          auditLogs: [],
+          notes: '',
+          queueLoading: false,
+          ticketLoading: false,
+          sessionId,
+          queueEmpty: true,
+          dirty: false,
+          currentLoadId: s.currentLoadId + 1,
+        }));
         return;
       }
 
-      const first = queue[0];
-      set({ queue, selectedId: first.id, queueLoading: false, sessionId });
+      set({ queue, selectedId: first.id, queueLoading: false, sessionId, queueEmpty: false });
       await get().loadTicketById(first.id);
     } catch (e) {
       set({
@@ -318,7 +343,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     set({ pendingSwitchId: null, dirty: false });
     // 清除自动保存的暂存数据，避免重新打开时恢复"已丢弃"的修改
     if (currentTicketId) {
-      deleteStashData(currentTicketId).catch((err) => {
+      const fencingToken = get().lockFencingToken;
+      if (fencingToken !== null) deleteStashData(currentTicketId, fencingToken).catch((err) => {
         console.warn('删除暂存数据失败，工单重新打开时可能恢复已丢弃的修改', currentTicketId, err);
       });
     }
@@ -399,14 +425,27 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   setFieldValue: (fieldId, value, reason) => {
-    // F2: 锁丢失/错误时禁止编辑
-    if (get().lockState === 'lost' || get().lockState === 'error') return;
-    const { ticket, fieldStates } = get();
+    const { ticket, lockState } = get();
+    // 已确认/已驳回的工单禁止修改 —— 退出编辑并明确提示，而非静默吞掉点击
+    if (ticket && (ticket.status === 'confirmed' || ticket.status === 'rejected')) {
+      set({
+        editingFieldId: null,
+        errorNotice: '该工单已确认/已驳回，字段不可修改',
+      });
+      return;
+    }
+    // F2: 锁丢失/错误时禁止编辑 —— 同样给出提示
+    if (lockState === 'lost' || lockState === 'error') {
+      set({
+        editingFieldId: null,
+        errorNotice: lockState === 'error' ? '锁服务不可用，无法保存修改' : '编辑锁已丢失，无法保存修改',
+      });
+      return;
+    }
     if (!ticket) return;
-    // 已确认/已驳回的工单禁止继续编辑
-    if (ticket.status === 'confirmed' || ticket.status === 'rejected') return;
     const field = ticket.fields.find((f) => f.id === fieldId);
     if (!field) return;
+    const fieldStates = get().fieldStates;
     const prev = fieldStates[fieldId];
     const reverted = valuesEqual(value, field.originalValue);
     const nextStatus: FieldReviewStatus = reverted ? prev.baselineStatus : 'modified';
@@ -526,8 +565,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   stash: async () => {
     // F2: 锁丢失/错误时禁止暂存
     if (get().lockState === 'lost' || get().lockState === 'error') return;
-    const { ticket, fieldStates, notes, queue, filters, selectedId } = get();
-    if (!ticket) return;
+    const { ticket, fieldStates, notes, queue, filters, selectedId, lockFencingToken } = get();
+    if (!ticket || lockFencingToken === null) return;
     // 已确认工单禁止暂存：后端 manual stash 会将 confirmed 回退为 stashed
     if (ticket.status === 'confirmed') {
       set({ error: '该工单已确认，不能暂存' });
@@ -542,7 +581,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
         ]),
       );
-      await stashWorkOrder(ticket.id, payload, notes, 'manual');
+      await stashWorkOrder(ticket.id, payload, notes, 'manual', lockFencingToken);
 
       // 计算下一条工单
       const list = queue.filter((i) => matchFilters(i, filters));
@@ -577,8 +616,14 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       } else {
         set({ queue: remainingQueue, ticket: null, queueEmpty: true });
       }
-    } catch {
-      set({ autoSaveStatus: 'failed', submittedToast: '暂存失败，请重试' });
+    } catch (e) {
+      if (e instanceof LockLostError) {
+        set({ autoSaveStatus: 'failed', lockState: 'lost' });
+      } else if (e instanceof ConflictError) {
+        set({ autoSaveStatus: 'failed', error: e.message });
+      } else {
+        set({ autoSaveStatus: 'failed', submittedToast: '暂存失败，请重试' });
+      }
     }
   },
 
@@ -591,8 +636,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       set({ submitDialogOpen: false, submitting: false, error: '编辑锁已丢失或不可用，请刷新页面后重新审核' });
       return;
     }
-    const { ticket, fieldStates, changeLog, queue, filters, selectedId, notes, sessionId } = get();
-    if (!ticket) return;
+    const { ticket, fieldStates, changeLog, queue, filters, selectedId, notes, sessionId, lockFencingToken } = get();
+    if (!ticket || lockFencingToken === null) return;
     // 已确认工单禁止重复提交（避免触发后端 409/423）
     if (ticket.status === 'confirmed') {
       console.warn('[submit] 工单已确认，禁止重复提交:', ticket.id);
@@ -631,7 +676,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
             { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
           ]),
         );
-        await stashWorkOrder(ticket.id, payload, notes, 'manual');
+        await stashWorkOrder(ticket.id, payload, notes, 'manual', lockFencingToken);
         set((s) => ({
           auditLogs: [newAudit, ...s.auditLogs],
           submitting: false,
@@ -639,10 +684,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           dirty: false,
           submittedToast: decisionLabel[decision],
         }));
-      } catch {
+      } catch (e) {
         set({
           submitting: false,
-          error: '暂存失败，请重试',
+          lockState: e instanceof LockLostError ? 'lost' : get().lockState,
+          error: e instanceof ConflictError ? e.message
+            : e instanceof LockLostError ? null : '暂存失败，请重试',
         });
       }
       return;
@@ -653,6 +700,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       const effectiveChanges = computeEffectiveChanges(ticket, fieldStates, changeLog);
       const apiChanges = effectiveChanges.map(changeRecordToFieldChange);
       const isReject = decision === 'rejected';
+      const submitKeyId = `${ticket.id}:${sessionId}`;
+      let idempotencyKey = submitKeys.get(submitKeyId);
+      if (!idempotencyKey) {
+        idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        submitKeys.set(submitKeyId, idempotencyKey);
+      }
 
       const confirmResp = await fetchConfirm(ticket.id, {
         session_id: sessionId,
@@ -660,7 +713,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         changes: apiChanges,
         reject_reason: isReject ? notes : null,
         review_notes: notes || null,
-        idempotency_key: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        idempotency_key: idempotencyKey,
+        lock_fencing_token: lockFencingToken,
       });
 
       // 计算下一条
@@ -679,7 +733,12 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         submitDialogOpen: false,
         dirty: false,
         ticket: s.ticket
-          ? { ...s.ticket, status: decidedStatus, version: s.ticket.version + 1 }
+          ? {
+              ...s.ticket,
+              status: decidedStatus,
+              version: s.ticket.version + 1,
+              syncStatus: confirmResp.sync_status,
+            }
           : s.ticket,
         lockState: staying ? 'released' : s.lockState,
         submittedToast:
@@ -687,6 +746,7 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
             ? `${decisionLabel[decision]}，已进入下一条工单`
             : decisionLabel[decision],
       }));
+      submitKeys.delete(submitKeyId);
 
       if (openNext && nextItem) {
         setTimeout(() => {
@@ -718,6 +778,34 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           submitDialogOpen: false,
           lockState: 'lost',
         });
+      } else if (e instanceof ValidationError) {
+        const blockingFields = new Set(
+          e.issues.filter((issue) => issue.severity === 'blocking' && issue.field).map((issue) => issue.field as string),
+        );
+        set((s) => ({
+          submitting: false,
+          submitDialogOpen: false,
+          errorNotice: e.message,
+          ticket: s.ticket ? {
+            ...s.ticket,
+            anomalies: e.issues.map((issue, index) => ({
+              id: `server-validation-${index}`,
+              code: issue.code,
+              type: issue.severity === 'blocking' ? 'blocking_error' : issue.severity,
+              fieldId: issue.field ?? undefined,
+              message: issue.message,
+            })),
+          } : s.ticket,
+          fieldStates: Object.fromEntries(Object.entries(s.fieldStates).map(([id, fs]) => {
+            if (blockingFields.has(id)) return [id, { ...fs, status: 'blocking_error' as const }];
+            if (fs.status === 'blocking_error' || fs.status === 'warning') {
+              const field = s.ticket?.fields.find((item) => item.id === id);
+              const changed = field ? !valuesEqual(fs.currentValue, field.originalValue) : false;
+              return [id, { ...fs, status: changed ? 'modified' as const : 'unchecked' as const }];
+            }
+            return [id, fs];
+          })),
+        }));
       } else {
         console.error('[submit] 提交失败:', e);
         set({
@@ -730,6 +818,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   },
 
   clearSubmittedToast: () => set({ submittedToast: null }),
+  setErrorNotice: (msg) => set({ errorNotice: msg }),
+  clearErrorNotice: () => set({ errorNotice: null }),
 
   resolveConflict: async (mode) => {
     const id = get().selectedId;
@@ -772,12 +862,10 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
           };
         });
       } catch {
-        // re-fetch 失败降级为简单 version bump
-        set((s) => ({
-          conflict: null,
+        set({
           ticketLoading: false,
-          ticket: s.ticket ? { ...s.ticket, version: (s.conflict?.theirVersion ?? s.ticket.version) + 1 } : s.ticket,
-        }));
+          error: '获取服务端最新版本失败，请检查网络后重试或放弃本地修改',
+        });
       }
     }
   },

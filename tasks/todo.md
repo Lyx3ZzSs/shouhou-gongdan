@@ -259,7 +259,7 @@ ReviewWorkbench（根：h-screen flex-col + TooltipProvider + 键盘/暂存 hook
 ### 已完成
 
 1. **同步早退 failed 落库** `backend/app/services/review_service.py`
-   - 记录不存在、ticket_no 不在 v_ticket 的两个早退分支，返回前写 `sync_status='failed' + sync_last_error`，避免工单永久卡 `syncing` 不可见。
+   - 记录不存在、ticket_no 不在 ticket_view 的两个早退分支，返回前写 `sync_status='failed' + sync_last_error`，避免工单永久卡 `syncing` 不可见。
 2. **驳回重置耗时 + 统计驳回口径修正** `review_service.py` / `stats_service.py` / `frontend/src/stats`
    - `_execute_reject` 置 `review_started_at=NULL, review_duration_seconds=NULL`，二次确认耗时只含第二段。
    - stats 通过按 `reviewed_at`、驳回按 `last_rejected_at` 分别取数 UNION 聚合；状态分布新增"已驳回待返工"切片；overview 新增 `one_pass_rate`（一次通过率）、`total_rejected`，修正 `approval_rate` 分母（已评审而非含未审核）。
@@ -350,6 +350,70 @@ ReviewWorkbench（根：h-screen flex-col + TooltipProvider + 键盘/暂存 hook
 - **销售易 `idempotencyKey__c` 去重语义**：需销售易侧确认同 key 是否返回原 dataId。若不支持去重，顺序重试仍可能重复建单，需引入对账机制。
 - bad_case_sample 管道统计（表只写不读，字段聚合已含 audit_log 部分）
 - 审核前 vs 审核后对照基线（需上线前数据，当前只能纵向趋势）
+
+---
+
+## 15. 合并两份表结构：ticket_source → public（2026-08-12）
+
+### 背景
+两 schema（ticket_source 源数据 + public 审核核心）两份独立表结构。用户选择"只合并 Schema"（保留表拆分与 ticket_view 视图），动机为单一数据源/接口对接/减少 JOIN 认知负担/整洁。经 2 个 Explore 子代理核实，生产耦合面极小（仅 import_service.py 3 行 SQL + 2 个脚本 + DDL）。
+
+### 改动
+- **DDL `schema_init.sql`**：删除 `ticket_source` schema，5 张源表（wechat_user/source_message/project_info/ticket/ticket_attachment）迁入 public，ticket_view 视图改引用 public.ticket/project_info。
+- **数据迁移**：`backend/scripts/migrate_schema_merge.sql`（ALTER TABLE SET SCHEMA ×5 + DROP SCHEMA + 重定义视图），已对 dev 库执行。
+- **代码**：`import_service.py` 3 行 SQL 去前缀；模型注释更新。
+- **脚本**：`seed_test_data.py` / `insert_test_ticket.py` 去 `ticket_source.` 前缀并删除 `CREATE SCHEMA ticket_source`（两脚本均自建 ticket_view，已同步）。
+- **文档**：README 表结构小节更新为"全部在 public"。
+
+### 验证
+- ✅ `ticket_source` schema 已删除；public 10 表 + ticket_view 视图；ticket_view/workorder_review 各 20 行
+- ✅ 后端 py_compile + app 加载；HTTP 列表/详情/统计 200（业务字段正确 JOIN）
+- ✅ `import_workorders` 幂等运行正常
+- ✅ `seed_test_data.py` 在合并后 schema 完整重跑（重建 public 表 + 20 条工单 + 审计/坏例数据）
+- ✅ 前端 tsc 通过（无改动）
+- 注：重跑 seed 重置了测试数据（原 SRV-2026-0099 工单被替换为全新 seed 数据集）
+
+### 非目标（如实说明）
+本次只统一命名空间；ticket_view 仍是唯一读取入口（JOIN 在其定义内部），未减少 JOIN；API 契约不变；未合并业务表。
+
+---
+
+## 16. 修复：字段编辑"确认"按钮无反应（2026-08-12）
+
+### 根因
+- 队列默认含已确认工单（Review P1-5），且初始选中取未筛选队列第一项（最新=confirmed）。
+- 双击进编辑只查 `isReadonly`、不查工单状态；`setFieldValue` 对 confirmed 状态**静默 return**。
+- 结果：用户在已确认工单上能进编辑、但点"确认"被静默拦截 → 按钮无反应。
+
+### 改动（frontend）
+- 队列默认筛选 `status: 'all'` → `'pending_review'`（`defaultFilters`）。
+- `init()` 初始选中改为匹配当前筛选的工单，避免落在已确认工单上。
+- `FieldGridItem`：`fieldReadonly`（工单 confirmed/rejected）时禁止双击/Enter 进入编辑，并提示。
+- `setFieldValue`：被 confirmed/rejected 或锁丢失拦截时**退出编辑 + 弹错误提示**，不再静默。
+- 新增 `ErrorNoticeToast`（警告样式轻提示）+ store `errorNotice` 状态。
+
+### 验证（浏览器实机，临时关闭 auth 验证后还原）
+- ✅ 队列默认只显示待审核工单（10 条）。
+- ✅ 已确认工单双击字段：不进入编辑 + 弹出"该工单已确认/已驳回，字段只读，无法修改"。
+- ✅ 待审核工单双击字段：正常进入编辑（回归通过）。
+- ✅ 刷新后默认选中待审核工单（不再是已确认）。
+- ✅ `tsc --noEmit` 通过；验证后 `.env.development` 已还原为 `VITE_AUTH_ENABLED=true`。
+
+---
+
+## 17. 修复：审批完成后不自动跳转下一个工单（2026-08-12）
+
+### 根因
+提交弹窗"提交并进入下一条"复选框 `openNext` 默认 `false`（未勾选）→ 审批完成后停留在当前工单。
+
+### 改动
+- `ReviewSubmitDialog.tsx`：`useState(false)` → `useState(true)`，默认勾选"提交并进入下一条"。
+
+### 验证（浏览器实机，临时关闭 auth 验证后还原）
+- ✅ 提交弹窗中"提交并进入下一条"默认勾选。
+- ✅ 确认 SRV-2026-0006 后，中间栏自动跳转到下一待审核工单 SRV-2026-0008（龙源电力江苏如东）。
+- ✅ `tsc --noEmit` 通过；`.env.development` 已还原为 `VITE_AUTH_ENABLED=true`。
+- 注：验证过程中确认了 1 条工单（SRV-2026-0006），触发了一次销售易同步（dev 环境测试工单）。
 
 ---
 

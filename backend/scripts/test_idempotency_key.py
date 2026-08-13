@@ -61,7 +61,8 @@ def _req(key: str, name: str, remark: str) -> CreateWorkOrderRequest:
     body = dict(BASE)
     body["name"] = name
     body["remark__c"] = remark
-    return CreateWorkOrderRequest(idempotency_key=key, **body)
+    # 该 key 仅保留用于展示历史实证标签，不再作为未声明字段发送销售易。
+    return CreateWorkOrderRequest(**body)
 
 
 async def main():

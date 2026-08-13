@@ -50,9 +50,24 @@ export function FieldGridItem({
   const setEditingField = useReviewStore((s) => s.setEditingField);
   const resetField = useReviewStore((s) => s.resetField);
   const useSuggestion = useReviewStore((s) => s.useSuggestion);
+  const ticketStatus = useReviewStore((s) => s.ticket?.status);
+  const setErrorNotice = useReviewStore((s) => s.setErrorNotice);
+
+  // 工单已确认/已驳回时字段只读：禁止进入编辑（避免"能进编辑但保存被静默拦截"的死胡同）
+  const fieldReadonly = ticketStatus === 'confirmed' || ticketStatus === 'rejected';
 
   const ref = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState(false);
+
+  // 定位闪烁 + 滚动到视图
+  useEffect(() => {
+    if (locatingFieldId === field.id && ref.current) {
+      ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [locatingTick, locatingFieldId, field.id]);
 
   // null guard must come before any fs property access
   if (!fs) return null;
@@ -66,16 +81,6 @@ export function FieldGridItem({
   const isReadonly = !!field.readonly;
   const valueIsEmpty = isEmpty(fs.currentValue);
   const isMissing = valueIsEmpty && field.required;
-
-  // 定位闪烁 + 滚动到视图
-  useEffect(() => {
-    if (locatingFieldId === field.id && ref.current) {
-      ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      setFlash(true);
-      const t = setTimeout(() => setFlash(false), 1200);
-      return () => clearTimeout(t);
-    }
-  }, [locatingTick, locatingFieldId, field.id]);
 
   const currentDisplay = formatValue(fs.currentValue, field);
   const originalDisplay = formatValue(field.originalValue, field);
@@ -97,7 +102,7 @@ export function FieldGridItem({
       ref={ref}
       className={cn(
         'group relative rounded-lg transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        !isReadonly && 'cursor-text hover:bg-accent/10',
+        !isReadonly && !fieldReadonly && 'cursor-text hover:bg-accent/10',
         colClass,
         isCompact ? 'px-2 py-1' : 'px-3 py-1.5',
         flash && 'locate-flash ring-2 ring-primary/20',
@@ -109,16 +114,25 @@ export function FieldGridItem({
         isModified && 'bg-primary/[0.03] border-l-2 border-primary/30',
       )}
       onDoubleClick={() => {
-        if (!isReadonly && !isEditing) setEditingField(field.id);
+        if (isReadonly || isEditing) return;
+        if (fieldReadonly) {
+          setErrorNotice('该工单已确认/已驳回，字段只读，无法修改');
+          return;
+        }
+        setEditingField(field.id);
       }}
       onKeyDown={(e) => {
         if (!isReadonly && !isEditing && (e.key === 'Enter' || e.key === 'F2')) {
           e.preventDefault();
+          if (fieldReadonly) {
+            setErrorNotice('该工单已确认/已驳回，字段只读，无法修改');
+            return;
+          }
           setEditingField(field.id);
         }
       }}
-      tabIndex={!isReadonly && !isEditing ? 0 : undefined}
-      aria-label={!isReadonly && !isEditing ? `编辑 ${field.name}（双击或按 Enter）` : undefined}
+      tabIndex={!isReadonly && !isEditing && !fieldReadonly ? 0 : undefined}
+      aria-label={!isReadonly && !isEditing && !fieldReadonly ? `编辑 ${field.name}（双击或按 Enter）` : undefined}
     >
       {/* 标签行 */}
       <div className="flex items-start gap-1.5">

@@ -12,6 +12,7 @@ import { ReviewSubmitDialog } from './components/ReviewSubmitDialog';
 import { VersionConflictDialog } from './components/VersionConflictDialog';
 import { UnsavedSwitchDialog } from './components/UnsavedSwitchDialog';
 import { SubmittedToast } from './components/SubmittedToast';
+import { ErrorNoticeToast } from './components/ErrorNoticeToast';
 import { useReviewStore } from './store/useReviewStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAutoSave } from './hooks/useAutoSave';
@@ -51,7 +52,7 @@ function RightRail() {
 
 interface Props { onNavigateStats: () => void }
 
-export function ReviewWorkbench({ onNavigateStats }: Props) {
+export default function ReviewWorkbench({ onNavigateStats }: Props) {
   const init = useReviewStore((s) => s.init);
   const leftCollapsed = useReviewStore((s) => s.leftCollapsed);
   const rightCollapsed = useReviewStore((s) => s.rightCollapsed);
@@ -127,13 +128,16 @@ export function ReviewWorkbench({ onNavigateStats }: Props) {
             />
           )}
         </div>
-        <StickyDecisionBar />
+        <ErrorBoundary panelName="审核操作栏">
+          <StickyDecisionBar />
+        </ErrorBoundary>
 
         {/* 弹窗与提示 */}
         <ReviewSubmitDialog />
         <VersionConflictDialog />
         <UnsavedSwitchDialog />
         <SubmittedToast />
+        <ErrorNoticeToast />
       </motion.div>
     </TooltipProvider>
   );

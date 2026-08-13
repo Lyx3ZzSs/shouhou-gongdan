@@ -1,465 +1,217 @@
-"""End-to-end integration tests for the review confirm/reject/idempotency flow.
+"""当前审核模型的 PostgreSQL 集成测试。
 
-Exercises the full stack: FastAPI router -> ReviewService -> database,
-using a real PostgreSQL database (test database created/destroyed per session).
-
-Pre-requisites:
-    PostgreSQL must be running (docker compose up -d postgres).
-    The test database 'shouhou_gongdan_test' is created automatically.
-
-Key design decisions:
-  - WorkOrder ORM model omits ~132 pre-existing columns, so the workorder
-    table is created via raw SQL to include only the columns needed by tests.
-  - LockService is patched to a no-op to avoid a Redis dependency.
-  - Each test truncates all tables for a clean state.
-  - Test database persists across test functions for speed; cleanup is
-    done at module teardown.
+覆盖 ticket/ticket_view + workorder_review + review_submission 的确认、驳回和幂等回放。
+测试使用独立数据库 shouhou_gongdan_test，不接触开发业务数据。
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy import make_url
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.exc import OperationalError
+from pathlib import Path
+from unittest.mock import AsyncMock
 
-from app.main import app
-from app.auth.dependencies import get_current_user, CurrentUser
-from app.core.database import get_db
+import asyncpg
+import pytest
+from sqlalchemy import make_url, text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
 from app.core.config import settings
+from app.schemas.review import ConfirmRequest, FieldChange
+from app.services.review_service import ReviewService
+from app.services.import_service import import_workorders
 
 TEST_DB_NAME = "shouhou_gongdan_test"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _build_test_db_url() -> str:
-    """Build the PostgreSQL connection URL for the test database."""
-    url = make_url(settings.DATABASE_URL)
-    return str(url.set(database=TEST_DB_NAME))
+def _url(database: str) -> str:
+    return make_url(settings.DATABASE_URL).set(database=database).render_as_string(
+        hide_password=False,
+    )
 
 
-def _build_admin_db_url() -> str:
-    """Build the PostgreSQL connection URL for the 'postgres' admin database."""
-    url = make_url(settings.DATABASE_URL)
-    return str(url.set(database="postgres"))
+def _asyncpg_url(database: str) -> str:
+    return _url(database).replace("postgresql+asyncpg://", "postgresql://")
 
 
-async def _ensure_test_db() -> None:
-    """Create the test database if it does not already exist."""
-    import asyncpg
-    admin_url = _build_admin_db_url()
+@pytest.fixture
+async def engine():
     try:
-        conn = await asyncpg.connect(dsn=admin_url, timeout=5)
+        admin = await asyncpg.connect(_asyncpg_url("postgres"), timeout=5)
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL is not available — skipping integration tests: {exc}")
+    try:
         try:
-            await conn.execute(
-                f'CREATE DATABASE "{TEST_DB_NAME}"'
-            )
+            await admin.execute(f'CREATE DATABASE "{TEST_DB_NAME}"')
         except asyncpg.DuplicateDatabaseError:
-            pass  # already exists
-        finally:
-            await conn.close()
-    except Exception:
-        # Connection failed — PostgreSQL is likely not running
-        pytest.skip("PostgreSQL is not available — skipping integration tests")
+            pass
+    finally:
+        await admin.close()
 
-
-async def _drop_test_db() -> None:
-    """Drop the test database."""
-    import asyncpg
-    admin_url = _build_admin_db_url()
+    conn = await asyncpg.connect(_asyncpg_url(TEST_DB_NAME))
     try:
-        conn = await asyncpg.connect(dsn=admin_url, timeout=5)
-        try:
-            await conn.execute(
-                f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}"'
-            )
-        finally:
-            await conn.close()
-    except Exception:
-        pass  # best-effort cleanup
+        await conn.execute(Path("../schema_init.sql").read_text(encoding="utf-8"))
+    finally:
+        await conn.close()
 
-
-async def _create_workorder(engine, **fields) -> None:
-    """Insert a workorder row via raw SQL."""
-    defaults = dict(
-        id="WO-E2E-DEFAULT",
-        version=1,
-        status="pending_review",
-        station_name="测试场站",
-        project_province="广东",
-        problem_description="测试问题描述",
-        problem_category_l1="数据问题",
-        order_level="P3",
-        responsible_person="李燕昆",
-        responsible_department="数据中心",
-        primary_department="数据中心",
-        after_sales_person="李燕昆",
-    )
-    defaults.update(fields)
-    cols = ", ".join(defaults.keys())
-    placeholders = ", ".join(f":{k}" for k in defaults)
-    async with AsyncSession(engine) as session:
-        async with session.begin():
-            await session.execute(
-                text(f"INSERT INTO workorder ({cols}) VALUES ({placeholders})"),
-                defaults,
-            )
-
-
-async def _fetch_one(engine, sql: str, **params):
-    """Execute a raw SQL query and return the first row, or None."""
-    async with AsyncSession(engine) as session:
-        result = await session.execute(text(sql), params)
-        return result.fetchone()
-
-
-async def _count(engine, table: str, **where) -> int:
-    """Count rows in *table* matching optional WHERE conditions."""
-    if where:
-        clause = " AND ".join(f"{k} = :{k}" for k in where)
-        sql = f"SELECT COUNT(*) FROM {table} WHERE {clause}"
-    else:
-        sql = f"SELECT COUNT(*) FROM {table}"
-    async with AsyncSession(engine) as session:
-        result = await session.execute(text(sql), where or None)
-        return result.scalar()
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def _test_db_session():
-    """Session-scoped: create test database once, drop at end.
-
-    This is NOT a pytest fixture returned to tests — it's a setup/teardown
-    hook that runs at session scope.  Tests use the function-scoped
-    ``engine`` fixture below.
-    """
-    import asyncio
+    value = create_async_engine(_url(TEST_DB_NAME), echo=False)
+    yield value
+    await value.dispose()
+    admin = await asyncpg.connect(_asyncpg_url("postgres"))
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        await admin.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname=$1 AND pid <> pg_backend_pid()", TEST_DB_NAME,
+        )
+        await admin.execute(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}"')
+    finally:
+        await admin.close()
 
-    loop.run_until_complete(_ensure_test_db())
-    yield
-    loop.run_until_complete(_drop_test_db())
 
-
-@pytest.fixture(scope="function")
-async def engine(_test_db_session):
-    """Create a real PostgreSQL engine and ensure all tables exist.
-
-    Truncates all tables at the start of each test for a clean state.
-    """
-    test_url = _build_test_db_url()
-    _engine = create_async_engine(test_url, echo=False)
-
-    # Ensure tables exist (idempotent — uses IF NOT EXISTS)
-    async with _engine.begin() as conn:
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS workorder (
-                id VARCHAR(64) PRIMARY KEY,
-                version INTEGER DEFAULT 1 NOT NULL,
-                status VARCHAR(32) DEFAULT 'pending_review',
-                reviewed_at TIMESTAMP,
-                reviewed_by VARCHAR(64),
-                reject_count INTEGER DEFAULT 0 NOT NULL,
-                last_reject_reason TEXT,
-                last_rejected_by VARCHAR(64),
-                last_rejected_at TIMESTAMP,
-                sync_status VARCHAR(16) DEFAULT 'pending',
-                station_name VARCHAR(255),
-                project_province VARCHAR(255),
-                problem_description TEXT,
-                problem_category_l1 VARCHAR(255),
-                order_level VARCHAR(32),
-                responsible_person VARCHAR(255),
-                responsible_department VARCHAR(255),
-                primary_department VARCHAR(255),
-                after_sales_person VARCHAR(255)
-            )
-        """))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS workorder_audit_log (
-                id BIGSERIAL PRIMARY KEY,
-                workorder_id VARCHAR(64) NOT NULL,
-                session_id VARCHAR(64) NOT NULL,
-                field_path VARCHAR(128) NOT NULL,
-                field_label VARCHAR(64) NOT NULL,
-                old_value TEXT,
-                new_value TEXT,
-                change_type VARCHAR(16) NOT NULL DEFAULT 'replace',
-                operator_id VARCHAR(64) NOT NULL,
-                operator_name VARCHAR(64),
-                operated_at TIMESTAMP NOT NULL DEFAULT NOW()
-            )
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_workorder
-            ON workorder_audit_log(workorder_id)
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_session
-            ON workorder_audit_log(session_id)
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_operator
-            ON workorder_audit_log(operator_id)
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_operated_at
-            ON workorder_audit_log(operated_at)
-        """))
-
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS bad_case_sample (
-                id BIGSERIAL PRIMARY KEY,
-                workorder_id VARCHAR(64) NOT NULL,
-                audit_log_id BIGINT NOT NULL
-                    REFERENCES workorder_audit_log(id),
-                field_path VARCHAR(128) NOT NULL,
-                ai_value TEXT,
-                human_value TEXT,
-                sample_status VARCHAR(16) NOT NULL DEFAULT 'pending',
-                source VARCHAR(32) NOT NULL DEFAULT 'review_correction',
-                created_at TIMESTAMP NOT NULL DEFAULT NOW()
-            )
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_status
-            ON bad_case_sample(sample_status)
-        """))
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_workorder
-            ON bad_case_sample(workorder_id)
-        """))
-
-    # Truncate all tables for a clean test state
-    async with _engine.begin() as conn:
+@pytest.fixture
+async def db(engine):
+    async with engine.begin() as conn:
         await conn.execute(text(
-            "TRUNCATE TABLE bad_case_sample, workorder_audit_log, workorder CASCADE"
+            "TRUNCATE review_submission, bad_case_sample, workorder_audit_log, "
+            "workorder_stash, workorder_review, ticket_attachment, ticket, "
+            "wechat_session, user_ledger, wechat_user RESTART IDENTITY CASCADE"
         ))
+        await conn.execute(text(
+            "INSERT INTO wechat_user (user_id, nick_name) VALUES ('wx-e2e', '测试客户')"
+        ))
+        await conn.execute(text("""
+            INSERT INTO wechat_session (
+                id, customer_id, start_time, customer_msgs, service_msgs, source, status
+            ) VALUES (
+                8001, 'wx-e2e', '2026-08-12 09:30:00+08', '[]', '[]', '微信', 'processed'
+            )
+        """))
+        await conn.execute(text("""
+            INSERT INTO user_ledger (
+                user_id, station_name, name, phone, province, case_account_id,
+                project_name, customer_short_name, service_cycle_start,
+                service_cycle_end, is_overdue_service
+            ) VALUES (
+                'wx-e2e', '测试风场', '测试客户', '13800000000', '河北', 'ACC-001',
+                '测试项目', '测试客户简称', '2026-01-01', '2026-12-31', 'false'
+            )
+        """))
+        await conn.execute(text("""
+            INSERT INTO ticket (
+                id, ticket_no, session_id, "ownerId", "dimDepart", "entityType",
+                name, "case_Source", "feedbackChannel_c", "workOrderStatus__c",
+                "caseDescription", "caseStatus", "problemLevel_c", "problemType1__c",
+                "problemType2__c", "problemType3__c", "problemResponsible_c",
+                "problemDept_c", "needCallBack__c", "needOnSite__c"
+            ) VALUES (
+                9001, 'T-E2E-001', 8001, 'u1', 'd1', '11010045500001',
+                '测试场站功率控制异常', '1',
+                '1', '1', '测试场站功率控制持续异常，需要技术人员排查',
+                '1', '1', '2', '17', '47', 'engineer-1', '技术支持部', '2', '2'
+            )
+        """))
+        await conn.execute(text("""
+            INSERT INTO workorder_review (
+                id, ticket_no, version, lock_fencing_token, review_status
+            ) VALUES ('WO-E2E-001', 'T-E2E-001', 1, 7, 'pending_review')
+        """))
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        yield session
 
-    yield _engine
 
-    await _engine.dispose()
-
-
-@pytest.fixture
-def mock_user():
-    return CurrentUser(
-        user_id="agent-001",
-        name="张三",
-        role="customer_service_agent",
-        department="售后部",
+def _request(*, session_id="sess-1", key="idem-1", reject_reason=None, changes=None):
+    return ConfirmRequest(
+        session_id=session_id, version=1, idempotency_key=key,
+        lock_fencing_token=7, reject_reason=reject_reason,
+        changes=changes or [],
     )
 
 
-@pytest.fixture
-async def client(mock_user, engine):
-    """FastAPI test client with auth + DB + LockService overrides."""
-    app.dependency_overrides[get_current_user] = lambda: mock_user
-
-    async def override_get_db():
-        async with AsyncSession(engine) as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    # Mock lock service to avoid a running Redis instance
-    mock_lock = MagicMock()
-    mock_lock.get_owner = AsyncMock(return_value={
-        "operator_id": mock_user.user_id,
-        "operator_name": mock_user.name,
-        "locked_at": "2026-07-18T10:00:00+00:00",
-    })
-    with patch("app.routers.review.get_lock_service", return_value=mock_lock), \
-         patch("app.services.lock_service.LockService.release"):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as ac:
-            yield ac
-
-    app.dependency_overrides.clear()
+def _service(db):
+    service = ReviewService(db)
+    service.lock_service = AsyncMock()
+    service.lock_service.get_owner.return_value = {
+        "operator_id": "agent-1", "operator_name": "审核员",
+        "locked_at": "2026-08-13T00:00:00+00:00", "fencing_token": 7,
+    }
+    return service
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-class TestReviewConfirmFlow:
-    """Confirm flow: status change, audit logs, bad_case records."""
-
-    async def test_full_confirm_flow(self, client, engine):
-        """End-to-end confirm: workorder status updated, audit logs + bad_case
-        records are written, version is incremented, reviewed_by is set."""
-        # Arrange – create a workorder with pending_review status
-        await _create_workorder(engine, id="WO-E2E-001")
-
-        # Act – submit a confirm review with two changes
-        resp = await client.post("/api/workorders/WO-E2E-001/review", json={
-            "session_id": "e2e-sess-001",
-            "version": 1,
-            "changes": [
-                {
-                    "op": "replace",
-                    "path": "/problem_category_l1",
-                    "field_label": "问题分类",
-                    "old_value": "数据问题",
-                    "new_value": "工程问题",
-                },
-                {
-                    "op": "replace",
-                    "path": "/order_level",
-                    "field_label": "受理单级别",
-                    "old_value": "P3",
-                    "new_value": "P2",
-                },
-            ],
-            "reject_reason": None,
-        })
-
-        # Assert – HTTP response shape
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data["status"] == "confirmed"
-        assert data["change_count"] == 2
-        assert data["bad_case_count"] == 2
-        assert data["next_status"] == "dispatching"
-        assert data["review_id"] != "dup"
-        assert data["review_id"].startswith("rev-")
-
-        # Assert – workorder row updated
-        row = await _fetch_one(
-            engine,
-            "SELECT status, version, reviewed_at, reviewed_by "
-            "FROM workorder WHERE id = :id",
-            id="WO-E2E-001",
-        )
-        assert row is not None
-        assert row[0] == "confirmed"          # status
-        assert row[1] == 2                     # version incremented
-        assert row[2] is not None              # reviewed_at set
-        assert row[3] == "张三"                 # reviewed_by
-
-        # Assert – two audit log entries
-        n_audit = await _count(
-            engine, "workorder_audit_log",
-            workorder_id="WO-E2E-001",
-        )
-        assert n_audit == 2
-
-        # Assert – two bad_case_sample records
-        n_bad = await _count(
-            engine, "bad_case_sample",
-            workorder_id="WO-E2E-001",
-        )
-        assert n_bad == 2
+@pytest.mark.asyncio
+async def test_confirm_persists_override_audit_bad_case_and_submission(db):
+    change = FieldChange(
+        op="replace", path="/problemType2__c", field_label="问题分类-2级",
+        old_value="17", new_value="15",
+    )
+    result = await _service(db).confirm(
+        workorder_id="WO-E2E-001", request=_request(changes=[change]),
+        operator_id="agent-1", operator_name="审核员",
+        operator_department="技术支持部", should_sync=False,
+    )
+    assert result.response["status"] == "confirmed"
+    row = (await db.execute(text(
+        "SELECT review_status, version, field_overrides->>'problemType2__c' "
+        "FROM workorder_review WHERE id='WO-E2E-001'"
+    ))).one()
+    assert tuple(row) == ("confirmed", 2, "15")
+    assert (await db.execute(text("SELECT count(*) FROM workorder_audit_log"))).scalar() == 1
+    assert (await db.execute(text("SELECT count(*) FROM bad_case_sample"))).scalar() == 1
+    assert (await db.execute(text("SELECT count(*) FROM review_submission"))).scalar() == 1
 
 
-class TestReviewRejectFlow:
-    """Reject flow: no bad_case, reject_count incremented."""
-
-    async def test_full_reject_flow_no_bad_case(self, client, engine):
-        """End-to-end reject: workorder reject_count incremented,
-        last_reject_reason set, zero bad_case records created."""
-        await _create_workorder(engine, id="WO-E2E-002",
-                                project_province="北京",
-                                problem_description="测试",
-                                problem_category_l1="产品问题",
-                                responsible_person="朱莉",
-                                responsible_department="产品部",
-                                primary_department="产品部",
-                                after_sales_person="朱莉",
-                                )
-
-        resp = await client.post("/api/workorders/WO-E2E-002/review", json={
-            "session_id": "e2e-sess-002",
-            "version": 1,
-            "changes": [],
-            "reject_reason": "分类不准确需重新判定",
-        })
-
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data["status"] == "rejected"
-        assert data["bad_case_count"] == 0
-        assert data["next_status"] == "pending_review"
-
-        row = await _fetch_one(
-            engine,
-            "SELECT reject_count, last_reject_reason "
-            "FROM workorder WHERE id = :id",
-            id="WO-E2E-002",
-        )
-        assert row is not None
-        assert row[0] == 1                           # reject_count
-        assert row[1] == "分类不准确需重新判定"          # last_reject_reason
-
-        n_bad = await _count(
-            engine, "bad_case_sample",
-            workorder_id="WO-E2E-002",
-        )
-        assert n_bad == 0
+@pytest.mark.asyncio
+async def test_reject_persists_reason_without_bad_case(db):
+    result = await _service(db).confirm(
+        workorder_id="WO-E2E-001",
+        request=_request(reject_reason="分类信息不足，请重新补充"),
+        operator_id="agent-1", operator_name="审核员",
+        operator_department="技术支持部", should_sync=False,
+    )
+    assert result.response["status"] == "rejected"
+    row = (await db.execute(text(
+        "SELECT review_status, reject_count, last_reject_reason "
+        "FROM workorder_review WHERE id='WO-E2E-001'"
+    ))).one()
+    assert tuple(row) == ("pending_review", 1, "分类信息不足，请重新补充")
+    assert (await db.execute(text("SELECT count(*) FROM bad_case_sample"))).scalar() == 0
 
 
-class TestReviewIdempotency:
-    """Idempotency: duplicate session_id returns 'dup' result."""
+@pytest.mark.asyncio
+async def test_idempotent_retry_replays_response_after_lock_release(db):
+    request = _request()
+    service = _service(db)
+    first = await service.confirm(
+        workorder_id="WO-E2E-001", request=request,
+        operator_id="agent-1", operator_name="审核员",
+        operator_department="技术支持部", should_sync=False,
+    )
+    await db.rollback()
+    service.lock_service.get_owner.return_value = None
+    retry = await service.confirm(
+        workorder_id="WO-E2E-001", request=request.model_copy(update={"lock_fencing_token": 99}),
+        operator_id="agent-1", operator_name="审核员",
+        operator_department="技术支持部", should_sync=False,
+    )
+    assert retry.response == first.response
+    assert (await db.execute(text("SELECT count(*) FROM review_submission"))).scalar() == 1
 
-    async def test_idempotency(self, client, engine):
-        """Submitting the same session_id twice returns a 'dup' response
-        and does NOT create duplicate audit-log or bad-case records."""
-        await _create_workorder(engine, id="WO-E2E-001")
-        resp1 = await client.post("/api/workorders/WO-E2E-001/review", json={
-            "session_id": "e2e-sess-003",
-            "version": 1,
-            "changes": [
-                {
-                    "op": "replace",
-                    "path": "/problem_category_l1",
-                    "field_label": "问题分类",
-                    "old_value": "数据问题",
-                    "new_value": "工程问题",
-                },
-            ],
-            "reject_reason": None,
-        })
-        assert resp1.status_code == 200, resp1.text
-        row = await _fetch_one(
-            engine,
-            "SELECT version FROM workorder WHERE id = :id",
-            id="WO-E2E-001",
-        )
-        current_version = row[0]
-        assert current_version == 2
 
-        # Act – same session_id again
-        resp2 = await client.post("/api/workorders/WO-E2E-001/review", json={
-            "session_id": "e2e-sess-003",
-            "version": current_version,
-            "changes": [],
-            "reject_reason": None,
-        })
+@pytest.mark.asyncio
+async def test_current_source_view_preserves_domain_contract(db):
+    row = (await db.execute(text("""
+        SELECT "caseSource", "feedbackChannel__c", "problemLevel__c",
+               "caseAccountId", "stationName", "projectName__c",
+               "isOverdueService__c", source_created_at
+        FROM ticket_view WHERE ticket_no='T-E2E-001'
+    """))).one()
+    assert tuple(row[:7]) == ('1', '1', '1', 'ACC-001', '测试风场', '测试项目', '2')
+    assert row.source_created_at is not None
 
-        assert resp2.status_code == 200, resp2.text
-        assert resp2.json()["review_id"] == "dup"
 
-        n_audit = await _count(
-            engine, "workorder_audit_log",
-            workorder_id="WO-E2E-001",
-        )
-        assert n_audit == 1
-
-        n_bad = await _count(
-            engine, "bad_case_sample",
-            workorder_id="WO-E2E-001",
-        )
-        assert n_bad == 1
+@pytest.mark.asyncio
+async def test_import_current_wechat_ticket_is_idempotent(db):
+    await db.execute(text("DELETE FROM workorder_review"))
+    await db.commit()
+    assert await import_workorders(db) == 1
+    assert await import_workorders(db) == 0
+    row = (await db.execute(text("""
+        SELECT ticket_no, initiator, initiator_department
+        FROM workorder_review
+    """))).one()
+    assert tuple(row) == ('T-E2E-001', '测试客户', '微信')

@@ -41,6 +41,8 @@ export interface FieldDef {
   name: string;
   group: FieldGroupId;
   originalValue: unknown;
+  /** 历史人工覆盖后的当前值；未提供时等于 originalValue。 */
+  currentValue?: unknown;
   systemSuggestion?: unknown;
   required?: boolean;
   type: FieldType;
@@ -68,6 +70,7 @@ export interface Anomaly {
   type: AnomalyType;
   fieldId?: string; // 关联字段，可点击定位
   message: string;
+  code?: string;
 }
 
 /** 单次修改事件（追加日志，用于字段修改历史） */
@@ -105,10 +108,15 @@ export interface ReviewTicket {
   slaRemainingMin: number;
   reviewer: string;
   version: number;
+  syncStatus: SyncStatus;
+  syncExternalId: string | null;
+  syncLastError: string | null;
   fields: FieldDef[];
   anomalies: Anomaly[];
   auditLogs: AuditLogEntry[];
 }
+
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed' | 'uncertain';
 
 /** 队列工单摘要 */
 export interface QueueItem {

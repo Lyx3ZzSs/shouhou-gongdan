@@ -179,22 +179,38 @@ cd ../frontend && npm run generate-types
 
 ## 数据库
 
-### Schema 概览
+### Schema 概览（全部在 public）
 
-| Schema | 表/视图 | 说明 |
-|--------|---------|------|
-| `public` | `workorder_review` | 审核元数据（状态、版本、同步信息） |
-| `public` | `workorder_audit_log` | 字段级审计日志 |
-| `public` | `bad_case_sample` | AI 坏例样本（模型回流） |
-| `public` | `workorder_stash` | 审核进度暂存 |
-| `public` | `v_ticket` | 工单业务数据视图（只读） |
-| `ticket_source` | `ticket` | 工单原始业务数据（销售易字段） |
-| `ticket_source` | `project_info` | 项目信息 |
-| `ticket_source` | `source_message` | 消息来源 |
-| `ticket_source` | `wechat_user` | 微信用户 |
-| `ticket_source` | `ticket_attachment` | 工单附件 |
+| 表/视图 | 说明 |
+|---------|------|
+| `workorder_review` | 审核元数据（状态、版本、同步信息） |
+| `workorder_audit_log` | 字段级审计日志 |
+| `bad_case_sample` | AI 坏例样本（模型回流） |
+| `workorder_stash` | 审核进度暂存 |
+| `review_submission` | 确认/驳回幂等结果 |
+| `ticket` | 工单原始业务数据（销售易字段，外部写入只读） |
+| `project_info` | 项目信息 |
+| `source_message` | 消息来源 |
+| `wechat_user` | 微信用户 |
+| `wechat_session` | 微信会话及原始消息 |
+| `user_ledger` | 客户、场站与项目台账 |
+| `beisen_employee_cache` | 员工和部门映射缓存 |
+| `ticket_attachment` | 工单附件 |
+| `ticket_view` | 【服务工单】唯一视图，基于 8 表输出规范业务字段 |
 
-完整 DDL 见根目录 `schema_init.sql`，与 ORM 模型严格同步。**`schema_init.sql` 是唯一 DDL 权威**（`docker compose up` 启动时自动执行）；`backend/alembic/` 迁移为遗留、未参与部署（曾以 `alembic stamp head` 标记），新增/修改表结构请直接改 `schema_init.sql`。
+> 8 张工单源表由外部管道写入、本系统只读。应用连接 `customer_service_ticket`，仅写审核自有表；`ticket_view` 是唯一业务读取入口并保持销售易字段名契约。
+
+空库/集成测试完整 DDL 见根目录 `schema_init.sql`。已有 8 表环境使用
+`backend/scripts/migrate_current_ticket_schema.sql`，该脚本不修改源表，只创建审核表、索引和 `ticket_view`。
+`backend/alembic/` 为遗留迁移，不参与当前部署。
+
+现有环境升级需依次执行 `backend/scripts/migrate_phase1_trust.sql` 和
+`backend/scripts/migrate_phase2_concurrency.sql`。第二阶段迁移为审核元数据增加
+Redis 锁 fencing token，应用升级前必须先完成该幂等迁移。
+
+运行探针：`GET /health` 仅检查进程存活；`GET /ready` 同时检查 PostgreSQL 与
+Redis，任一依赖不可用时返回 503。生产负载均衡和 Kubernetes readinessProbe
+应使用 `/ready`，livenessProbe 使用 `/health`。
 
 ## API 端点
 
@@ -203,7 +219,7 @@ cd ../frontend && npm run generate-types
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/workorders` | 工单列表（分页） |
-| `GET` | `/api/workorders/{id}` | 工单详情（合并 v_ticket 业务字段） |
+| `GET` | `/api/workorders/{id}` | 工单详情（合并 ticket_view 业务字段） |
 | `POST` | `/api/workorders/{id}/review` | 提交审核（确认/驳回，会触发销售易同步） |
 | `POST` | `/api/workorders/{id}/confirm` | 确认提交（异步同步至销售易） |
 | `GET` | `/api/workorders/{id}/audit-logs` | 审核审计日志 |
@@ -228,7 +244,7 @@ cd ../frontend && npm run generate-types
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/admin/import` | 从 ticket_source 导入工单到审核表 |
+| `POST` | `/api/admin/import` | 从 ticket 导入工单到审核表 |
 | `GET` | `/api/admin/sync-failures` | 查询销售易同步失败记录 |
 | `POST` | `/api/admin/retry-sync/{id}` | 重试同步 |
 

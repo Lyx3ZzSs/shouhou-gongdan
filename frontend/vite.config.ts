@@ -18,4 +18,13 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ['@antv/g2plot'],
+        },
+      },
+    },
+  },
 });

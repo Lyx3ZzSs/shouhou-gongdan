@@ -46,6 +46,10 @@ class XiaoShouYiError(RuntimeError):
         self.retryable = retryable
 
 
+class XiaoShouYiUncertainError(XiaoShouYiError):
+    """请求可能已被销售易处理，但客户端未取得完整响应，禁止自动重试。"""
+
+
 # API 文档明确要求的必填字段（独立于 field_config.yaml 的 UI 校验标记）
 _API_DOC_REQUIRED_FIELDS: set[str] = {
     "ownerId", "dimDepart", "entityType", "name",
@@ -76,7 +80,7 @@ def _normalize_timestamp(value: str) -> str:
     """将日期字符串转为 Unix 时间戳字符串。
 
     销售易 API 的"年月日时间戳"字段期望 Unix epoch 秒数（如 "1784797500"），
-    但 v_ticket 视图中可能存储 YYYY-MM-DD 格式字符串，此处做兼容转换。
+    但 ticket_view 视图中可能存储 YYYY-MM-DD 格式字符串，此处做兼容转换。
     如果已经是纯数字时间戳则原样返回。
     """
     if not value or not value.strip():
@@ -101,10 +105,7 @@ def _normalize_timestamp(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 class CreateWorkOrderRequest(BaseModel):
-    """销售易 insertServiceCase 请求体 — 33 可见字段 + defectFlag__c + idempotency_key。"""
-    # ---- Idempotency ----
-    idempotency_key: str = ""
-
+    """销售易文档声明的 insertServiceCase 请求体。"""
     # ---- Required ----
     ownerId: str = ""
     dimDepart: str = ""
@@ -141,7 +142,6 @@ class CreateWorkOrderRequest(BaseModel):
     remark__c: str = ""
     planFeedbackTime__c: str = ""
     requireSolveTime__c: str = ""
-    relatedAttachment__c: str = ""
     defectFlag__c: str = "1"
 
     def to_api_body(self) -> dict[str, Any]:
@@ -149,17 +149,12 @@ class CreateWorkOrderRequest(BaseModel):
 
         - 所有已知字段始终发送（空值发空字符串），避免 API 因缺少字段而 NPE
         - 时间戳字段自动从日期字符串转为 Unix 时间戳
-        - idempotency_key 以 idempotencyKey__c 自定义字段发送（__c 后缀
-          符合销售易 Salesforce 风格 API 约定）
+        - 仅发送 ApiPost 文档声明的字段
         """
         data: dict[str, Any] = {"defectFlag__c": self.defectFlag__c}
 
-        # 幂等键以自定义字段发送
-        if self.idempotency_key:
-            data["idempotencyKey__c"] = self.idempotency_key
-
-        for field_name in self.model_fields:
-            if field_name in ("defectFlag__c", "idempotency_key"):
+        for field_name in XIAOSHOUYI_REQUEST_FIELDS:
+            if field_name == "defectFlag__c":
                 continue
             value = getattr(self, field_name)
 
@@ -180,11 +175,10 @@ class CreateWorkOrderRequest(BaseModel):
 # DB → 销售易 API 字段映射
 # ---------------------------------------------------------------------------
 
-# DB 列名（v_ticket 视图驼峰命名）→ 销售易 API 字段名（完全一致时省略映射）
+# DB 列名（ticket_view 视图驼峰命名）→ 销售易 API 字段名（完全一致时省略映射）
 DB_TO_API_FIELD_MAP: dict[str, str] = {
     "ownerId":                "ownerId",
     "dimDepart":              "dimDepart",
-    "entityType":             "entityType",
     "name":                   "name",
     "caseSource":             "caseSource",
     "feedbackChannel__c":     "feedbackChannel__c",
@@ -213,20 +207,22 @@ DB_TO_API_FIELD_MAP: dict[str, str] = {
     "isHandled__c":           "isHandled__c",
     "needOnSite__c":          "needOnSite__c",
     "remark__c":              "remark__c",
-    "relatedAttachment__c":   "relatedAttachment__c",
     "planFeedbackTime__c":    "planFeedbackTime__c",
     "requireSolveTime__c":    "requireSolveTime__c",
     "defectFlag__c":          "defectFlag__c",
 }
 
+# ApiPost 文档（2026-08-03）声明的完整出站白名单。新增本地字段不会自动污染销售易请求。
+XIAOSHOUYI_REQUEST_FIELDS: tuple[str, ...] = tuple(CreateWorkOrderRequest.model_fields)
+
 
 def map_db_to_xiaoshouyi(
     merged: dict[str, object],
-    idempotency_key: str = "",
 ) -> CreateWorkOrderRequest:
-    """将 merge(v_ticket, field_overrides) 的结果映射为销售易 API 请求。"""
+    """将 merge(ticket_view, field_overrides) 的结果映射为销售易 API 请求。"""
     return CreateWorkOrderRequest(
-        idempotency_key=idempotency_key,
+        # 接口固定实体类型；忽略源表中的缺位/脏值。
+        entityType="11010045500001",
         **{
             api_key: str(merged.get(db_key, "")) if merged.get(db_key) is not None else ""
             for db_key, api_key in DB_TO_API_FIELD_MAP.items()
@@ -255,6 +251,7 @@ class XiaoShouYiClient:
     def __init__(self) -> None:
         from app.core.config import settings
 
+        self._settings = settings
         self._base_url = settings.XIAOSHOUYI_BASE_URL.rstrip("/") if settings.XIAOSHOUYI_BASE_URL else ""
         self._token_url = settings.XIAOSHOUYI_TOKEN_URL
         self._client_id = settings.XIAOSHOUYI_CLIENT_ID
@@ -274,7 +271,19 @@ class XiaoShouYiClient:
     async def _get_client(self) -> httpx.AsyncClient:
         """延迟创建共享 httpx 客户端，复用连接池减少 TCP/TLS 握手开销。"""
         if self._http is None:
-            self._http = httpx.AsyncClient(timeout=None)  # 超时由调用方 asyncio.wait_for 控制
+            total = self._settings.XIAOSHOUYI_SYNC_TIMEOUT_SECONDS
+            timeout = httpx.Timeout(
+                connect=min(5.0, total),
+                read=total,
+                write=min(10.0, total),
+                pool=min(5.0, total),
+            )
+            proxy = self._settings.XIAOSHOUYI_PROXY_URL or None
+            self._http = httpx.AsyncClient(
+                timeout=timeout,
+                proxy=proxy,
+                trust_env=False,
+            )
         return self._http
 
     async def close(self) -> None:
@@ -382,8 +391,14 @@ class XiaoShouYiClient:
                     "Authorization": f"Bearer {token}",
                 },
             )
-        except _RETRYABLE_NETWORK_ERRORS as e:
-            raise XiaoShouYiError(f"销售易网络错误: {e}", retryable=True) from e
+        except (httpx.ReadError, httpx.ReadTimeout, httpx.WriteError, httpx.WriteTimeout,
+                httpx.RemoteProtocolError) as e:
+            # 请求可能已写入并由销售易处理，只是响应中断；销售易不保证幂等，
+            # 此时必须人工核实，不能自动重试。
+            raise XiaoShouYiUncertainError(f"销售易响应未确认: {e}") from e
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+            # 尚未建立业务连接，可安全按现有策略重试。
+            raise XiaoShouYiError(f"销售易连接错误: {e}", retryable=True) from e
 
         elapsed_ms = round((time.monotonic() - t0) * 1000)
 

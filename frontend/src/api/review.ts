@@ -92,8 +92,9 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   return res;
 }
 
-export async function fetchWorkOrderList(): Promise<GeneratedWorkOrderSummary[]> {
-  const res = await authFetch(BASE);
+export async function fetchWorkOrderList(status?: string): Promise<GeneratedWorkOrderSummary[]> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : '';
+  const res = await authFetch(`${BASE}${params}`);
   if (!res.ok) throw new Error(await extractErrorDetail(res, `获取工单列表失败: ${res.status}`));
   const data = await res.json();
   // 后端返回 PaginatedWorkOrderSummary { items, total, offset, limit }
@@ -138,6 +139,18 @@ export class ConflictError extends Error {
   }
 }
 export class LockLostError extends Error {}
+export class ValidationError extends Error {
+  issues: Array<{ code: string; severity: 'blocking' | 'warning' | 'info'; field: string | null; message: string }>;
+
+  constructor(detail: unknown) {
+    const info = (typeof detail === 'object' && detail !== null ? detail : {}) as {
+      message?: string;
+      issues?: ValidationError['issues'];
+    };
+    super(info.message ?? '工单存在阻断问题，无法确认');
+    this.issues = info.issues ?? [];
+  }
+}
 
 export async function acquireLock(id: string): Promise<LockStatus> {
   const res = await authFetch(`${BASE}/${id}/lock`, {
@@ -147,9 +160,10 @@ export async function acquireLock(id: string): Promise<LockStatus> {
   return res.json();
 }
 
-export async function releaseLock(id: string): Promise<void> {
+export async function releaseLock(id: string, fencingToken: number): Promise<void> {
   await authFetch(`${BASE}/${id}/lock`, {
     method: 'DELETE',
+    headers: { 'X-Lock-Fencing-Token': String(fencingToken) },
   });
 }
 
@@ -158,11 +172,14 @@ export async function stashWorkOrder(
   fieldStates: Record<string, unknown>,
   notes: string,
   mode: 'manual' | 'auto_save' = 'manual',
+  fencingToken: number,
 ): Promise<void> {
   const res = await authFetch(`${BASE}/${id}/stash`, {
     method: 'POST',
-    body: JSON.stringify({ field_states: fieldStates, notes, mode }),
+    body: JSON.stringify({ field_states: fieldStates, notes, mode, lock_fencing_token: fencingToken }),
   });
+  if (res.status === 409) throw new ConflictError((await res.json()).detail);
+  if (res.status === 423) throw new LockLostError(await extractErrorDetail(res, '编辑锁已失效'));
   if (!res.ok) throw new Error(await extractErrorDetail(res, `暂存失败: ${res.status}`));
 }
 
@@ -174,21 +191,24 @@ export interface StashData {
 
 export async function fetchStashData(id: string): Promise<StashData | null> {
   const res = await authFetch(`${BASE}/${id}/stash`);
+  // 兼容滚动发布期间仍以 404 表示“无暂存”的旧后端。
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await extractErrorDetail(res, `获取暂存数据失败: ${res.status}`));
   return res.json();
 }
 
-export async function deleteStashData(id: string): Promise<void> {
+export async function deleteStashData(id: string, fencingToken: number): Promise<void> {
   const res = await authFetch(`${BASE}/${id}/stash`, {
     method: 'DELETE',
+    headers: { 'X-Lock-Fencing-Token': String(fencingToken) },
   });
   if (!res.ok) throw new Error(await extractErrorDetail(res, `删除暂存数据失败: ${res.status}`));
 }
 
-export async function heartbeatLock(id: string): Promise<'ok' | 'lost'> {
+export async function heartbeatLock(id: string, fencingToken: number): Promise<'ok' | 'lost'> {
   const res = await authFetch(`${BASE}/${id}/lock`, {
     method: 'PUT',
+    headers: { 'X-Lock-Fencing-Token': String(fencingToken) },
   });
   if (res.status === 423) return 'lost';
   if (!res.ok) throw new Error(await extractErrorDetail(res, `心跳失败: ${res.status}`));
@@ -202,6 +222,7 @@ export interface ConfirmRequest {
   reject_reason: string | null;
   review_notes: string | null;
   idempotency_key: string;
+  lock_fencing_token: number;
 }
 
 export interface ConfirmResponse {
@@ -210,8 +231,8 @@ export interface ConfirmResponse {
   status: 'confirmed' | 'rejected';
   change_count: number;
   bad_case_count: number;
-  next_status: string;
-  sync_status: 'pending' | 'synced' | 'failed';
+  next_review_status: string;
+  sync_status: 'pending' | 'syncing' | 'synced' | 'failed' | 'uncertain';
 }
 
 export async function fetchConfirm(
@@ -228,6 +249,10 @@ export async function fetchConfirm(
   if (res.status === 423) {
     throw new LockLostError(await extractErrorDetail(res, '编辑锁已失效'));
   }
+  if (res.status === 422) {
+    const body = await res.json();
+    throw new ValidationError(body.detail);
+  }
   if (!res.ok) throw new Error(await extractErrorDetail(res, `确认提交失败: ${res.status}`));
   return res.json();
 }
@@ -236,4 +261,24 @@ export async function fetchAuditLogs(id: string): Promise<GeneratedAuditLogEntry
   const res = await authFetch(`${BASE}/${id}/audit-logs`);
   if (!res.ok) throw new Error(await extractErrorDetail(res, `获取审计日志失败: ${res.status}`));
   return res.json();
+}
+
+export async function reconcileSync(id: string, externalId: string): Promise<void> {
+  const res = await authFetch(`/api/admin/sync-uncertain/${id}/reconcile`, {
+    method: 'POST',
+    body: JSON.stringify({ external_id: externalId }),
+  });
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `人工对账失败: ${res.status}`));
+}
+
+export async function confirmSyncNotCreated(id: string): Promise<void> {
+  const res = await authFetch(`/api/admin/sync-uncertain/${id}/confirm-not-created`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `核实未创建失败: ${res.status}`));
+}
+
+export async function retrySync(id: string): Promise<void> {
+  const res = await authFetch(`/api/admin/sync-failures/${id}/retry`, { method: 'POST' });
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `同步重试失败: ${res.status}`));
 }

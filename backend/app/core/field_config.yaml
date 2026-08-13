@@ -21,6 +21,26 @@ groups:
   - id: system
     name: 系统信息
 
+# 审核规则参数。分类父子映射需由销售易权威字典生成；未配置时只校验层级完整性。
+review_rules:
+  special_order_types: ["2", "4", "5", "6", "7", "11"]
+  urgent_problem_levels: ["2"]
+  high_risk_problem_type2: ["3", "6", "7"]
+  high_risk_problem_type3: ["40"]
+  high_risk_keywords:
+    - AGC拉停
+    - AGC 拉停
+    - 倒塔
+    - 失电
+    - 全站停电
+    - 脱网
+    - 解列
+    - 二次安防
+    - 功率控制异常
+  category_parents:
+    problemType2__c: {}
+    problemType3__c: {}
+
 fields:
   # ====== 基本信息 ======
   - key: ownerId
@@ -461,9 +481,15 @@ fields:
     type: text
     ui_visible: true
   - key: caseAccountId
+    name: 场站编号
+    group: project
+    type: text
+    ui_visible: true
+  - key: stationName
     name: 场站名称
     group: project
     type: text
+    readonly: true
     ui_visible: true
 
   # ====== 服务周期 ======

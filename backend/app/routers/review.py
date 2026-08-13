@@ -1,7 +1,8 @@
 import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update as sa_update, delete as sa_delete, func
+from sqlalchemy import select, update as sa_update, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.auth.dependencies import require_admin, require_any_role
 from app.auth.schemas import CurrentUser
@@ -15,8 +16,9 @@ from app.schemas.review import (
     StashRequest, StashResponse, StashData,
     PaginatedWorkOrderSummary,
 )
-from app.services.review_service import ReviewService, ConfirmResult, background_sync_to_xiaoshouyi
+from app.services.review_service import ReviewService, background_sync_to_xiaoshouyi
 from app.services.query_service import WorkOrderQueryService
+from app.services.import_service import import_workorders
 from app.core.database import get_db, async_session
 from app.models.audit_log import WorkOrderAuditLog
 
@@ -70,7 +72,8 @@ async def review_workorder(
     """
     lock_service = get_lock_service()
     owner = await lock_service.get_owner(workorder_id)
-    if owner is None or owner["operator_id"] != current_user.user_id:
+    if (owner is None or owner["operator_id"] != current_user.user_id
+            or owner.get("fencing_token") != request.lock_fencing_token):
         raise HTTPException(status_code=423, detail="请先获取编辑锁")
 
     service = ReviewService(db)
@@ -101,12 +104,18 @@ async def confirm_workorder(
     db: AsyncSession = Depends(get_db),
 ):
     """确认提交：本地落库后立即返回，后台异步同步至销售易。"""
+    service = ReviewService(db)
+    existing = await service.get_idempotent_response(workorder_id, request)
+    if existing is not None:
+        return ConfirmResponse(**existing)
+    await db.rollback()
+
     lock_service = get_lock_service()
     owner = await lock_service.get_owner(workorder_id)
-    if owner is None or owner["operator_id"] != current_user.user_id:
+    if (owner is None or owner["operator_id"] != current_user.user_id
+            or owner.get("fencing_token") != request.lock_fencing_token):
         raise HTTPException(status_code=423, detail="请先获取编辑锁")
 
-    service = ReviewService(db)
     result = await service.confirm(
         workorder_id=workorder_id,
         request=request,
@@ -141,10 +150,17 @@ async def stash_workorder(
     """
     lock_service = get_lock_service()
     owner = await lock_service.get_owner(workorder_id)
-    if owner is None or owner["operator_id"] != current_user.user_id:
+    if (owner is None or owner["operator_id"] != current_user.user_id
+            or owner.get("fencing_token") != request.lock_fencing_token):
         raise HTTPException(status_code=423, detail="请先获取编辑锁")
 
     async with db.begin():
+        status_row = await db.execute(
+            select(WorkOrderReview.review_status).where(WorkOrderReview.id == workorder_id)
+        )
+        current_status = status_row.scalar_one_or_none()
+        if current_status not in {'pending_review', 'reviewing', 'stashed'}:
+            raise HTTPException(status_code=409, detail="当前工单状态不允许暂存")
         # Upsert stash data
         stmt = pg_insert(WorkOrderStash).values(
             workorder_id=workorder_id,
@@ -162,16 +178,21 @@ async def stash_workorder(
         await db.execute(stmt)
 
         if request.mode == "manual":
-            await db.execute(
+            status_result = await db.execute(
                 sa_update(WorkOrderReview)
                 .where(WorkOrderReview.id == workorder_id)
+                .where(WorkOrderReview.review_status.in_(['pending_review', 'reviewing', 'stashed']))
                 .values(review_status='stashed')
             )
+            if status_result.rowcount == 0:
+                raise HTTPException(status_code=409, detail="当前工单状态不允许暂存")
 
     if request.mode == "manual":
         # Release lock so others can pick up the ticket
         svc = ReviewService(db)
-        await svc.release_lock_safely(workorder_id, current_user.user_id)
+        await lock_service.release(
+            workorder_id, current_user.user_id, request.lock_fencing_token,
+        )
 
     return {"status": "ok"}
 
@@ -182,13 +203,13 @@ async def get_stash(
     current_user: CurrentUser = Depends(require_any_role),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取暂存的审核进度。404 表示无暂存数据。"""
+    """获取暂存的审核进度。无暂存时返回空数据，避免将正常初始状态报为 404。"""
     result = await db.execute(
         select(WorkOrderStash).where(WorkOrderStash.workorder_id == workorder_id)
     )
     stash = result.scalar_one_or_none()
     if stash is None:
-        raise HTTPException(status_code=404, detail="暂存数据不存在")
+        return StashData()
 
     return StashData(
         field_states=stash.field_states,
@@ -200,13 +221,15 @@ async def get_stash(
 @router.delete("/{workorder_id}/stash", response_model=StashResponse)
 async def delete_stash(
     workorder_id: str,
+    fencing_token: int = Header(alias="X-Lock-Fencing-Token"),
     current_user: CurrentUser = Depends(require_any_role),
     db: AsyncSession = Depends(get_db),
 ):
     """删除暂存的审核进度（用户丢弃修改时调用）。"""
     lock_service = get_lock_service()
     owner = await lock_service.get_owner(workorder_id)
-    if owner is None or owner["operator_id"] != current_user.user_id:
+    if (owner is None or owner["operator_id"] != current_user.user_id
+            or owner.get("fencing_token") != fencing_token):
         raise HTTPException(status_code=423, detail="请先获取编辑锁")
 
     async with db.begin():
@@ -254,6 +277,20 @@ async def get_audit_logs(
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
+@admin_router.post("/import")
+async def import_new_workorders(
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """将源表新增工单幂等导入审核队列。"""
+    try:
+        count = await import_workorders(db)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"imported": count}
+
+
 @admin_router.get("/sync-failures")
 async def list_sync_failures(
     limit: int = 50,
@@ -263,7 +300,7 @@ async def list_sync_failures(
     """列出同步失败的工单（sync_status='failed'）。"""
     result = await db.execute(
         select(WorkOrderReview)
-        .where(WorkOrderReview.sync_status == 'failed')
+        .where(WorkOrderReview.sync_status.in_(('failed', 'uncertain')))
         .order_by(WorkOrderReview.reviewed_at.desc())
         .limit(limit)
     )
@@ -274,6 +311,8 @@ async def list_sync_failures(
             "ticket_no": r.ticket_no,
             "sync_attempts": r.sync_attempts,
             "sync_last_error": r.sync_last_error,
+            "sync_status": r.sync_status,
+            "sync_external_id": r.sync_external_id,
             "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
         }
         for r in rows
@@ -318,6 +357,16 @@ async def retry_sync(
     # 使用已有的幂等键或生成新的重试键
     idempotency_key = wo.sync_idempotency_key or f"retry-{workorder_id}-{uuid.uuid4().hex[:8]}"
 
+    # 后台任务统一只认领 pending；人工重试 failed 时先显式恢复为 pending。
+    if wo.sync_status == 'failed':
+        await db.execute(
+            sa_update(WorkOrderReview)
+            .where(WorkOrderReview.id == workorder_id)
+            .where(WorkOrderReview.sync_status == 'failed')
+            .values(sync_status='pending', sync_last_error=None, sync_started_at=None),
+        )
+        await db.commit()
+
     # 后台重试
     background_tasks.add_task(
         background_sync_to_xiaoshouyi,
@@ -327,3 +376,75 @@ async def retry_sync(
     )
 
     return {"status": "retrying", "workorder_id": workorder_id}
+
+
+class ReconcileSyncRequest(BaseModel):
+    external_id: str = Field(min_length=1, max_length=64)
+
+
+@admin_router.post("/sync-uncertain/{workorder_id}/reconcile")
+async def reconcile_uncertain_sync(
+    workorder_id: str,
+    request: ReconcileSyncRequest,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """人工确认销售易已创建工单，并绑定其外部工单号。"""
+    external_id = request.external_id.strip()
+    if not external_id:
+        raise HTTPException(status_code=422, detail="销售易外部工单号不能为空")
+    result = await db.execute(
+        sa_update(WorkOrderReview)
+        .where(WorkOrderReview.id == workorder_id)
+        .where(WorkOrderReview.sync_status == 'uncertain')
+        .where(WorkOrderReview.sync_external_id.is_(None))
+        .values(
+            sync_status='synced',
+            sync_external_id=external_id,
+            sync_last_error=None,
+        )
+        .returning(WorkOrderReview.ticket_no)
+    )
+    ticket_no = result.scalar_one_or_none()
+    if ticket_no is None:
+        check = await db.execute(select(WorkOrderReview).where(WorkOrderReview.id == workorder_id))
+        if check.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="工单不存在")
+        raise HTTPException(status_code=409, detail="只有结果待核实且尚未绑定外部单号的工单可以对账")
+    await db.commit()
+    return {
+        "status": "synced",
+        "workorder_id": workorder_id,
+        "ticket_no": ticket_no,
+        "sync_external_id": external_id,
+    }
+
+
+@admin_router.post("/sync-uncertain/{workorder_id}/confirm-not-created")
+async def confirm_uncertain_not_created(
+    workorder_id: str,
+    current_user: CurrentUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """人工确认销售易未创建工单，将 uncertain 转为可人工重试的 failed。"""
+    result = await db.execute(
+        sa_update(WorkOrderReview)
+        .where(WorkOrderReview.id == workorder_id)
+        .where(WorkOrderReview.sync_status == 'uncertain')
+        .where(WorkOrderReview.sync_external_id.is_(None))
+        .values(
+            sync_status='failed',
+            sync_attempts=0,
+            sync_last_error='管理员已核实销售易未创建，可人工重试',
+            sync_started_at=None,
+        )
+        .returning(WorkOrderReview.ticket_no)
+    )
+    ticket_no = result.scalar_one_or_none()
+    if ticket_no is None:
+        check = await db.execute(select(WorkOrderReview).where(WorkOrderReview.id == workorder_id))
+        if check.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="工单不存在")
+        raise HTTPException(status_code=409, detail="只有结果待核实且未绑定外部单号的工单可以确认未创建")
+    await db.commit()
+    return {"status": "failed", "workorder_id": workorder_id, "ticket_no": ticket_no}
