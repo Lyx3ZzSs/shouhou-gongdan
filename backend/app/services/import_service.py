@@ -12,24 +12,12 @@ async def import_workorders(db: AsyncSession) -> int:
 
     返回导入的记录数。
     """
-    duplicate = (await db.execute(text("""
-        SELECT ticket_no, count(*) AS count
-        FROM ticket
-        GROUP BY ticket_no
-        HAVING count(*) > 1
-        LIMIT 1
-    """))).mappings().first()
-    if duplicate:
-        raise ValueError(
-            f"ticket_no={duplicate['ticket_no']} 存在 {duplicate['count']} 条源记录，已停止导入"
-        )
-
     result = await db.execute(
         text("""
-            INSERT INTO workorder_review (id, ticket_no, review_status, initiator, initiator_department)
+            INSERT INTO workorder_review (id, ticket_id, review_status, initiator, initiator_department)
             SELECT
-                :prefix || gen_random_uuid()::VARCHAR(64) AS id,
-                t.ticket_no,
+                :prefix || t.id::VARCHAR(64) AS id,
+                t.id,
                 'pending_review',
                 COALESCE(NULLIF(t."feedbackUserName_c", ''), ul.name, wu.nick_name,
                          sm.from_addr, '未知'),
@@ -41,9 +29,7 @@ async def import_workorders(db: AsyncSession) -> int:
             LEFT JOIN source_message sm ON t.source_id = sm.id
             LEFT JOIN beisen_employee_cache bec
                 ON t."ownerId" = bec.job_number AND bec.status = 1
-            WHERE NOT EXISTS (
-                SELECT 1 FROM workorder_review wr WHERE wr.ticket_no = t.ticket_no
-            )
+            ON CONFLICT (ticket_id) DO NOTHING
             RETURNING id
         """),
         {"prefix": "wo-"},

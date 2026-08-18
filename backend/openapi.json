@@ -71,6 +71,15 @@
               "type": "string",
               "title": "Workorder Id"
             }
+          },
+          {
+            "name": "X-Lock-Fencing-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "X-Lock-Fencing-Token"
+            }
           }
         ],
         "responses": {
@@ -116,6 +125,15 @@
               "type": "string",
               "title": "Workorder Id"
             }
+          },
+          {
+            "name": "X-Lock-Fencing-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "X-Lock-Fencing-Token"
+            }
           }
         ],
         "responses": {
@@ -148,28 +166,89 @@
           "review"
         ],
         "summary": "List Workorders",
+        "description": "工单列表（分页 + 搜索）。\n\n- status: 按工单状态筛选（pending_review / confirmed / stashed）\n- keyword: 按序列号/站点/客户/项目名模糊搜索\n- offset/limit: 分页参数（默认每页 50 条）",
         "operationId": "list_workorders_api_workorders_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/WorkOrderSummary"
-                  },
-                  "type": "array",
-                  "title": "Response List Workorders Api Workorders Get"
+                  "$ref": "#/components/schemas/PaginatedWorkOrderSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/workorders/{workorder_id}": {
@@ -225,7 +304,9 @@
           "review"
         ],
         "summary": "Review Workorder",
+        "description": "[已废弃] 请使用 POST /{workorder_id}/confirm 代替。\n\n本端点仍可正常使用，但将在未来版本中移除。",
         "operationId": "review_workorder_api_workorders__workorder_id__review_post",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -282,7 +363,7 @@
           "review"
         ],
         "summary": "Confirm Workorder",
-        "description": "确认提交：审核通过后本地落库，后台异步同步至销售易。",
+        "description": "确认提交：本地落库后立即返回，后台异步同步至销售易。",
         "operationId": "confirm_workorder_api_workorders__workorder_id__confirm_post",
         "security": [
           {
@@ -317,6 +398,165 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workorders/{workorder_id}/stash": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Stash Workorder",
+        "description": "暂存审核进度。\n\nmode='manual': 标记工单为 stashed + 释放锁，其他人可接手。\nmode='auto_save': 仅保存进度，不改变工单状态，不释放锁。",
+        "operationId": "stash_workorder_api_workorders__workorder_id__stash_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StashRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StashResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Get Stash",
+        "description": "获取暂存的审核进度。无暂存时返回空数据，避免将正常初始状态报为 404。",
+        "operationId": "get_stash_api_workorders__workorder_id__stash_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StashData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Delete Stash",
+        "description": "删除暂存的审核进度（用户丢弃修改时调用）。",
+        "operationId": "delete_stash_api_workorders__workorder_id__stash_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          },
+          {
+            "name": "X-Lock-Fencing-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "X-Lock-Fencing-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StashResponse"
                 }
               }
             }
@@ -384,6 +624,551 @@
           }
         }
       }
+    },
+    "/api/admin/import": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Import New Workorders",
+        "description": "将源表新增工单幂等导入审核队列。",
+        "operationId": "import_new_workorders_api_admin_import_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/sync-failures": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Sync Failures",
+        "description": "列出同步失败的工单（sync_status='failed'）。",
+        "operationId": "list_sync_failures_api_admin_sync_failures_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/sync-failures/{workorder_id}/retry": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Retry Sync",
+        "description": "手动重试指定工单的销售易同步。\n\n支持 failed / pending 状态的工单重试。已存在 sync_external_id\n的记录（幂等已完成）将被直接标记为 synced 而不重复调用 API。",
+        "operationId": "retry_sync_api_admin_sync_failures__workorder_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/sync-uncertain/{workorder_id}/reconcile": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reconcile Uncertain Sync",
+        "description": "人工确认销售易已创建工单，并绑定其外部工单号。",
+        "operationId": "reconcile_uncertain_sync_api_admin_sync_uncertain__workorder_id__reconcile_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileSyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/sync-uncertain/{workorder_id}/confirm-not-created": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Confirm Uncertain Not Created",
+        "description": "人工确认销售易未创建工单，将 uncertain 转为可人工重试的 failed。",
+        "operationId": "confirm_uncertain_not_created_api_admin_sync_uncertain__workorder_id__confirm_not_created_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workorder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workorder Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/overview": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Overview",
+        "description": "总览：已审核总数、今日审核、平均耗时、通过率、待审核数。",
+        "operationId": "stats_overview_api_stats_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/stats/by-reviewer": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats By Reviewer",
+        "description": "按审核人员统计审核量、通过/驳回数、平均耗时。",
+        "operationId": "stats_by_reviewer_api_stats_by_reviewer_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/trends": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Trends",
+        "description": "每日审核趋势（最近 N 天）。",
+        "operationId": "stats_trends_api_stats_trends_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/duration-distribution": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Duration Distribution",
+        "description": "审核耗时分布（按区间）。",
+        "operationId": "stats_duration_distribution_api_stats_duration_distribution_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/stats/status-distribution": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Status Distribution",
+        "description": "工单状态分布（待审核/已通过/已驳回）。",
+        "operationId": "stats_status_distribution_api_stats_status_distribution_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/stats/field-corrections": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Field Corrections",
+        "description": "错误字段聚合：按字段统计修正频次（审核员最常纠正哪些字段）。",
+        "operationId": "stats_field_corrections_api_stats_field_corrections_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/efficiency": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Stats Efficiency",
+        "description": "售后效率趋势：按周聚合一次通过率/返工/修正量/同步接受率。",
+        "operationId": "stats_efficiency_api_stats_efficiency_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "weeks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 52,
+              "minimum": 2,
+              "default": 12,
+              "title": "Weeks"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "健康检查端点 — 可用于 Docker healthcheck / K8s liveness probe。",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Readiness Check",
+        "description": "就绪探针：依赖与核心数据库契约均可用时才接收审核流量。",
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -434,8 +1219,7 @@
               "$ref": "#/components/schemas/FieldChange"
             },
             "type": "array",
-            "title": "Changes",
-            "default": []
+            "title": "Changes"
           },
           "reject_reason": {
             "anyOf": [
@@ -448,16 +1232,32 @@
             ],
             "title": "Reject Reason"
           },
+          "review_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Notes"
+          },
           "idempotency_key": {
             "type": "string",
             "title": "Idempotency Key"
+          },
+          "lock_fencing_token": {
+            "type": "integer",
+            "title": "Lock Fencing Token"
           }
         },
         "type": "object",
         "required": [
           "session_id",
           "version",
-          "idempotency_key"
+          "idempotency_key",
+          "lock_fencing_token"
         ],
         "title": "ConfirmRequest",
         "description": "确认提交请求 — 新增 idempotency_key 用于销售易幂等去重。"
@@ -488,16 +1288,18 @@
             "type": "integer",
             "title": "Bad Case Count"
           },
-          "next_status": {
+          "next_review_status": {
             "type": "string",
-            "title": "Next Status"
+            "title": "Next Review Status"
           },
           "sync_status": {
             "type": "string",
             "enum": [
               "pending",
+              "syncing",
               "synced",
-              "failed"
+              "failed",
+              "uncertain"
             ],
             "title": "Sync Status",
             "default": "pending"
@@ -510,10 +1312,10 @@
           "status",
           "change_count",
           "bad_case_count",
-          "next_status"
+          "next_review_status"
         ],
         "title": "ConfirmResponse",
-        "description": "确认提交响应 — 新增 sync_status 表示销售易同步状态。"
+        "description": "确认提交响应。\n\nsync_status 始终为 \"pending\"：确认提交后由 BackgroundTasks 异步同步至销售易，\n实际同步结果（synced / failed）需通过 GET /api/admin/sync-failures 查询。"
       },
       "FieldChange": {
         "properties": {
@@ -619,11 +1421,69 @@
               }
             ],
             "title": "Status"
+          },
+          "fencing_token": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fencing Token"
           }
         },
         "type": "object",
         "title": "LockStatus",
         "description": "Response for lock acquire / release / heartbeat endpoints."
+      },
+      "PaginatedWorkOrderSummary": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkOrderSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedWorkOrderSummary",
+        "description": "分页工单摘要列表。"
+      },
+      "ReconcileSyncRequest": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "External Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_id"
+        ],
+        "title": "ReconcileSyncRequest"
       },
       "ReviewRequest": {
         "properties": {
@@ -640,8 +1500,7 @@
               "$ref": "#/components/schemas/FieldChange"
             },
             "type": "array",
-            "title": "Changes",
-            "default": []
+            "title": "Changes"
           },
           "reject_reason": {
             "anyOf": [
@@ -653,12 +1512,28 @@
               }
             ],
             "title": "Reject Reason"
+          },
+          "review_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Notes"
+          },
+          "lock_fencing_token": {
+            "type": "integer",
+            "title": "Lock Fencing Token"
           }
         },
         "type": "object",
         "required": [
           "session_id",
-          "version"
+          "version",
+          "lock_fencing_token"
         ],
         "title": "ReviewRequest"
       },
@@ -688,9 +1563,9 @@
             "type": "integer",
             "title": "Bad Case Count"
           },
-          "next_status": {
+          "next_review_status": {
             "type": "string",
-            "title": "Next Status"
+            "title": "Next Review Status"
           }
         },
         "type": "object",
@@ -700,9 +1575,83 @@
           "status",
           "change_count",
           "bad_case_count",
-          "next_status"
+          "next_review_status"
         ],
         "title": "ReviewResponse"
+      },
+      "StashData": {
+        "properties": {
+          "field_states": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Field States"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "title": "StashData",
+        "description": "Response for GET /api/workorders/{id}/stash"
+      },
+      "StashRequest": {
+        "properties": {
+          "field_states": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Field States"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto_save"
+            ],
+            "title": "Mode",
+            "default": "manual"
+          },
+          "lock_fencing_token": {
+            "type": "integer",
+            "title": "Lock Fencing Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lock_fencing_token"
+        ],
+        "title": "StashRequest",
+        "description": "暂存请求 — 保存当前审核进度到服务端。\n\nmode='manual': 标记工单为 stashed，释放编辑锁。\nmode='auto_save': 仅保存进度，不改变工单状态，不释放锁。"
+      },
+      "StashResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "StashResponse"
       },
       "ValidationError": {
         "properties": {
@@ -744,6 +1693,83 @@
         ],
         "title": "ValidationError"
       },
+      "ValidationIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "warning",
+              "info"
+            ],
+            "title": "Severity"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "related_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Related Fields"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ValidationIssue"
+      },
+      "ValidationResult": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "blocking_count": {
+            "type": "integer",
+            "title": "Blocking Count"
+          },
+          "warning_count": {
+            "type": "integer",
+            "title": "Warning Count"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid",
+          "blocking_count",
+          "warning_count",
+          "issues"
+        ],
+        "title": "ValidationResult"
+      },
       "WorkOrderResponse": {
         "properties": {
           "id": {
@@ -754,7 +1780,11 @@
             "type": "integer",
             "title": "Version"
           },
-          "status": {
+          "ticket_id": {
+            "type": "integer",
+            "title": "Ticket Id"
+          },
+          "review_status": {
             "anyOf": [
               {
                 "type": "string"
@@ -763,7 +1793,7 @@
                 "type": "null"
               }
             ],
-            "title": "Status"
+            "title": "Review Status"
           },
           "reject_count": {
             "type": "integer",
@@ -803,7 +1833,7 @@
             ],
             "title": "Last Rejected At"
           },
-          "serial_number": {
+          "review_notes": {
             "anyOf": [
               {
                 "type": "string"
@@ -812,7 +1842,7 @@
                 "type": "null"
               }
             ],
-            "title": "Serial Number"
+            "title": "Review Notes"
           },
           "created_at": {
             "anyOf": [
@@ -824,6 +1854,17 @@
               }
             ],
             "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "initiator": {
             "anyOf": [
@@ -847,40 +1888,41 @@
             ],
             "title": "Initiator Department"
           },
-          "station_name": {
+          "field_overrides": {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Station Name"
+            "title": "Field Overrides"
           },
-          "dispatch_name": {
+          "original_data": {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Dispatch Name"
+            "title": "Original Data"
           },
-          "project_code": {
+          "validation": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/ValidationResult"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Project Code"
+            ]
           },
-          "project_name": {
+          "sync_status": {
             "anyOf": [
               {
                 "type": "string"
@@ -889,9 +1931,9 @@
                 "type": "null"
               }
             ],
-            "title": "Project Name"
+            "title": "Sync Status"
           },
-          "project_province": {
+          "sync_external_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -900,9 +1942,9 @@
                 "type": "null"
               }
             ],
-            "title": "Project Province"
+            "title": "Sync External Id"
           },
-          "customer_name": {
+          "sync_last_error": {
             "anyOf": [
               {
                 "type": "string"
@@ -911,9 +1953,9 @@
                 "type": "null"
               }
             ],
-            "title": "Customer Name"
+            "title": "Sync Last Error"
           },
-          "problem_description": {
+          "review_started_at": {
             "anyOf": [
               {
                 "type": "string"
@@ -922,20 +1964,20 @@
                 "type": "null"
               }
             ],
-            "title": "Problem Description"
+            "title": "Review Started At"
           },
-          "feedback_channel": {
+          "review_duration_seconds": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Feedback Channel"
+            "title": "Review Duration Seconds"
           },
-          "product_line": {
+          "ownerId": {
             "anyOf": [
               {
                 "type": "string"
@@ -944,9 +1986,9 @@
                 "type": "null"
               }
             ],
-            "title": "Product Line"
+            "title": "Ownerid"
           },
-          "product_category": {
+          "dimDepart": {
             "anyOf": [
               {
                 "type": "string"
@@ -955,9 +1997,9 @@
                 "type": "null"
               }
             ],
-            "title": "Product Category"
+            "title": "Dimdepart"
           },
-          "product_type": {
+          "entityType": {
             "anyOf": [
               {
                 "type": "string"
@@ -966,9 +2008,9 @@
                 "type": "null"
               }
             ],
-            "title": "Product Type"
+            "title": "Entitytype"
           },
-          "customer_level": {
+          "name": {
             "anyOf": [
               {
                 "type": "string"
@@ -977,9 +2019,9 @@
                 "type": "null"
               }
             ],
-            "title": "Customer Level"
+            "title": "Name"
           },
-          "problem_category_l1": {
+          "caseSource": {
             "anyOf": [
               {
                 "type": "string"
@@ -988,9 +2030,9 @@
                 "type": "null"
               }
             ],
-            "title": "Problem Category L1"
+            "title": "Casesource"
           },
-          "problem_category_l2": {
+          "feedbackChannel__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -999,9 +2041,9 @@
                 "type": "null"
               }
             ],
-            "title": "Problem Category L2"
+            "title": "Feedbackchannel  C"
           },
-          "problem_category_l3": {
+          "workOrderStatus__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1010,9 +2052,9 @@
                 "type": "null"
               }
             ],
-            "title": "Problem Category L3"
+            "title": "Workorderstatus  C"
           },
-          "order_type": {
+          "caseDescription": {
             "anyOf": [
               {
                 "type": "string"
@@ -1021,9 +2063,9 @@
                 "type": "null"
               }
             ],
-            "title": "Order Type"
+            "title": "Casedescription"
           },
-          "problem_type": {
+          "caseStatus": {
             "anyOf": [
               {
                 "type": "string"
@@ -1032,9 +2074,9 @@
                 "type": "null"
               }
             ],
-            "title": "Problem Type"
+            "title": "Casestatus"
           },
-          "fault_category": {
+          "caseAccountId": {
             "anyOf": [
               {
                 "type": "string"
@@ -1043,9 +2085,9 @@
                 "type": "null"
               }
             ],
-            "title": "Fault Category"
+            "title": "Caseaccountid"
           },
-          "fault_detail": {
+          "custLevel1__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1054,9 +2096,9 @@
                 "type": "null"
               }
             ],
-            "title": "Fault Detail"
+            "title": "Custlevel1  C"
           },
-          "responsible_person": {
+          "projectName__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1065,9 +2107,9 @@
                 "type": "null"
               }
             ],
-            "title": "Responsible Person"
+            "title": "Projectname  C"
           },
-          "responsible_department": {
+          "projectProvince__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1076,9 +2118,9 @@
                 "type": "null"
               }
             ],
-            "title": "Responsible Department"
+            "title": "Projectprovince  C"
           },
-          "primary_department": {
+          "bigCustShortName__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1087,9 +2129,9 @@
                 "type": "null"
               }
             ],
-            "title": "Primary Department"
+            "title": "Bigcustshortname  C"
           },
-          "after_sales_person": {
+          "serviceCycleStart__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1098,9 +2140,9 @@
                 "type": "null"
               }
             ],
-            "title": "After Sales Person"
+            "title": "Servicecyclestart  C"
           },
-          "transferred_person": {
+          "serviceCycleEnd__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1109,9 +2151,9 @@
                 "type": "null"
               }
             ],
-            "title": "Transferred Person"
+            "title": "Servicecycleend  C"
           },
-          "transferred_department": {
+          "isOfflineApply__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1120,9 +2162,9 @@
                 "type": "null"
               }
             ],
-            "title": "Transferred Department"
+            "title": "Isofflineapply  C"
           },
-          "order_level": {
+          "isOverdueService__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1131,9 +2173,9 @@
                 "type": "null"
               }
             ],
-            "title": "Order Level"
+            "title": "Isoverdueservice  C"
           },
-          "fault_level": {
+          "stationName": {
             "anyOf": [
               {
                 "type": "string"
@@ -1142,9 +2184,9 @@
                 "type": "null"
               }
             ],
-            "title": "Fault Level"
+            "title": "Stationname"
           },
-          "onsite_level": {
+          "problemLevel__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1153,9 +2195,9 @@
                 "type": "null"
               }
             ],
-            "title": "Onsite Level"
+            "title": "Problemlevel  C"
           },
-          "required_solve_time": {
+          "problemType1__c": {
             "anyOf": [
               {
                 "type": "string"
@@ -1164,16 +2206,182 @@
                 "type": "null"
               }
             ],
-            "title": "Required Solve Time"
+            "title": "Problemtype1  C"
+          },
+          "problemType2__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemtype2  C"
+          },
+          "problemType3__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemtype3  C"
+          },
+          "feedbackCount__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedbackcount  C"
+          },
+          "problemResponsible__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemresponsible  C"
+          },
+          "problemDept__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemdept  C"
+          },
+          "feedbackUserName__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedbackusername  C"
+          },
+          "feedbackUserContact__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedbackusercontact  C"
+          },
+          "needCallBack__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needcallback  C"
+          },
+          "isHandled__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ishandled  C"
+          },
+          "needOnSite__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needonsite  C"
+          },
+          "remark__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark  C"
+          },
+          "relatedAttachment__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relatedattachment  C"
+          },
+          "planFeedbackTime__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planfeedbacktime  C"
+          },
+          "requireSolveTime__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiresolvetime  C"
+          },
+          "defectFlag__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defectflag  C"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "version"
+          "version",
+          "ticket_id"
         ],
         "title": "WorkOrderResponse",
-        "description": "Response for GET /api/workorders/{id} — mirrors frontend WorkOrderData."
+        "description": "Response for GET /api/workorders/{id} — merges ticket_view business fields + workorder_review metadata."
       },
       "WorkOrderSummary": {
         "properties": {
@@ -1181,18 +2389,11 @@
             "type": "string",
             "title": "Id"
           },
-          "serial_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Serial Number"
+          "ticket_id": {
+            "type": "integer",
+            "title": "Ticket Id"
           },
-          "station_name": {
+          "name": {
             "anyOf": [
               {
                 "type": "string"
@@ -1201,9 +2402,9 @@
                 "type": "null"
               }
             ],
-            "title": "Station Name"
+            "title": "Name"
           },
-          "status": {
+          "review_status": {
             "anyOf": [
               {
                 "type": "string"
@@ -1212,9 +2413,9 @@
                 "type": "null"
               }
             ],
-            "title": "Status"
+            "title": "Review Status"
           },
-          "customer_name": {
+          "caseAccountId": {
             "anyOf": [
               {
                 "type": "string"
@@ -1223,7 +2424,18 @@
                 "type": "null"
               }
             ],
-            "title": "Customer Name"
+            "title": "Caseaccountid"
+          },
+          "bigCustShortName__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bigcustshortname  C"
           },
           "created_at": {
             "anyOf": [
@@ -1239,7 +2451,8 @@
         },
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "ticket_id"
         ],
         "title": "WorkOrderSummary",
         "description": "Summary row for GET /api/workorders list."

@@ -56,7 +56,7 @@ class FieldChange(BaseModel):
 class WorkOrderSummary(BaseModel):
     """Summary row for GET /api/workorders list."""
     id: str
-    ticket_no: str | None = None
+    ticket_id: int
     name: str | None = None
     review_status: str | None = None
     caseAccountId: str | None = None
@@ -75,7 +75,7 @@ class WorkOrderResponse(BaseModel):
     """Response for GET /api/workorders/{id} — merges ticket_view business fields + workorder_review metadata."""
     id: str
     version: int
-    ticket_no: str | None = None
+    ticket_id: int
     review_status: str | None = None
     reject_count: int = 0
     last_reject_reason: str | None = None

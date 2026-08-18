@@ -30,7 +30,6 @@ DROP SCHEMA ticket_source;
 CREATE OR REPLACE VIEW public.ticket_view AS
 SELECT
     t.id,
-    t.ticket_no,
     t."ownerId",
     t."dimDepart",
     t."entityType",

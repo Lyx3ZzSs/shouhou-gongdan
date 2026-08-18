@@ -42,7 +42,6 @@ REVIEWERS = [
 # 20 条真实场景工单，覆盖不同的项目、客户、问题类型
 TICKETS = [
     {
-        "ticket_no": "SRV-2026-0001",
         "name": "华能阜新风电场功率预测精度下降问题",
         "ownerId": "EMP000101",
         "dimDepart": "售后服务部",
@@ -81,7 +80,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0002",
         "name": "中广核敦煌光伏电站数据采集异常",
         "ownerId": "EMP000102",
         "dimDepart": "运维部",
@@ -119,7 +117,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0003",
         "name": "国电投青海共和风场AGC考核争议",
         "ownerId": "EMP000103",
         "dimDepart": "技术部",
@@ -157,7 +154,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0004",
         "name": "华电宁夏灵武光伏电站逆变器故障",
         "ownerId": "EMP000104",
         "dimDepart": "工程运维部",
@@ -195,7 +191,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0005",
         "name": "大唐内蒙古赤峰风场测风塔数据异常",
         "ownerId": "EMP000105",
         "dimDepart": "工程运维部",
@@ -233,7 +228,6 @@ TICKETS = [
         "initiator_dept": "技术部",
     },
     {
-        "ticket_no": "SRV-2026-0006",
         "name": "中节能新疆哈密风场短期预测模型优化",
         "ownerId": "EMP000106",
         "dimDepart": "技术部",
@@ -271,7 +265,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0007",
         "name": "三峡云南永胜光伏电站系统升级需求",
         "ownerId": "EMP000107",
         "dimDepart": "技术部",
@@ -309,7 +302,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0008",
         "name": "龙源电力江苏如东海上风电通讯中断",
         "ownerId": "EMP000108",
         "dimDepart": "工程运维部",
@@ -347,7 +339,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0009",
         "name": "中核集团福建福清核电站周边风场数据对接",
         "ownerId": "EMP000109",
         "dimDepart": "技术部",
@@ -385,7 +376,6 @@ TICKETS = [
         "initiator_dept": "技术部",
     },
     {
-        "ticket_no": "SRV-2026-0010",
         "name": "华润广东湛江风电场年度精度报告需求",
         "ownerId": "EMP000110",
         "dimDepart": "数据中心",
@@ -423,7 +413,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0011",
         "name": "京能河北张家口风电场扩容功率预测适配",
         "ownerId": "EMP000111",
         "dimDepart": "技术部",
@@ -461,7 +450,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0012",
         "name": "国家能源集团山西大同光伏电站模型优化",
         "ownerId": "EMP000112",
         "dimDepart": "技术部",
@@ -499,7 +487,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0013",
         "name": "中电建四川凉山风电场数据合格率考核",
         "ownerId": "EMP000113",
         "dimDepart": "数据中心",
@@ -537,7 +524,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0014",
         "name": "粤电广东阳江海上风电数据补传",
         "ownerId": "EMP000114",
         "dimDepart": "数据中心",
@@ -575,7 +561,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0015",
         "name": "中广核湖北大悟风电场技术培训需求",
         "ownerId": "EMP000115",
         "dimDepart": "售后服务部",
@@ -613,7 +598,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0016",
         "name": "华能吉林白城风电场免考报告申请",
         "ownerId": "EMP000116",
         "dimDepart": "技术部",
@@ -651,7 +635,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0017",
         "name": "国电江西赣州光伏电站运维问题咨询",
         "ownerId": "EMP000117",
         "dimDepart": "售后服务部",
@@ -689,7 +672,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0018",
         "name": "中节能甘肃酒泉风电场设备试验配合",
         "ownerId": "EMP000118",
         "dimDepart": "技术部",
@@ -727,7 +709,6 @@ TICKETS = [
         "initiator_dept": "运营部",
     },
     {
-        "ticket_no": "SRV-2026-0019",
         "name": "三峡西藏那曲风电场特殊环境设备问题",
         "ownerId": "EMP000119",
         "dimDepart": "工程运维部",
@@ -765,7 +746,6 @@ TICKETS = [
         "initiator_dept": "运维部",
     },
     {
-        "ticket_no": "SRV-2026-0020",
         "name": "粤电贵州毕节光伏电站消缺整改",
         "ownerId": "EMP000120",
         "dimDepart": "技术部",
@@ -837,8 +817,7 @@ CREATE_TICKET_SOURCE_TABLES = [
     """
     CREATE TABLE IF NOT EXISTS ticket (
         id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-        ticket_no VARCHAR(100) NOT NULL UNIQUE,
-        source_id BIGINT REFERENCES source_message(id),
+        source_id BIGINT UNIQUE REFERENCES source_message(id),
         "ownerId" VARCHAR(64),
         "dimDepart" VARCHAR(128),
         "entityType" VARCHAR(32) DEFAULT '11010045500001',
@@ -897,7 +876,6 @@ CREATE_TICKET_VIEW = """
 CREATE VIEW ticket_view AS
 SELECT
     t.id,
-    t.ticket_no,
     t."ownerId",
     t."dimDepart",
     t."entityType",
@@ -1034,7 +1012,7 @@ async def seed(engine) -> None:
             await db.execute(
                 text("""
                     INSERT INTO ticket (
-                        ticket_no, source_id,
+                        source_id,
                         "ownerId", "dimDepart", "entityType", name,
                         "caseSource", "feedbackChannel__c", "workOrderStatus__c",
                         "caseDescription", "caseStatus",
@@ -1045,7 +1023,7 @@ async def seed(engine) -> None:
                         "remark__c", "planFeedbackTime__c", "requireSolveTime__c", "defectFlag__c",
                         "caseAccountId"
                     ) VALUES (
-                        :ticket_no, :source_id,
+                        :source_id,
                         :ownerId, :dimDepart, :entityType, :name,
                         :caseSource, :feedbackChannel__c, :workOrderStatus__c,
                         :caseDescription, :caseStatus,
@@ -1056,10 +1034,9 @@ async def seed(engine) -> None:
                         :remark__c, :planFeedbackTime__c, :requireSolveTime__c, :defectFlag__c,
                         :caseAccountId
                     )
-                    ON CONFLICT (ticket_no) DO NOTHING
+                    ON CONFLICT (source_id) DO NOTHING
                 """),
                 {
-                    "ticket_no": t["ticket_no"],
                     "source_id": msg_counter,
                     "ownerId": t.get("ownerId", ""),
                     "dimDepart": t.get("dimDepart", ""),
@@ -1105,10 +1082,10 @@ async def seed(engine) -> None:
 
         # 获取所有 workorder_review 记录
         result = await db.execute(
-            text("SELECT id, ticket_no FROM workorder_review ORDER BY ticket_no")
+            text("SELECT id, ticket_id FROM workorder_review ORDER BY ticket_id")
         )
         all_rows = list(result.mappings())
-        ticket_to_wid = {r["ticket_no"]: r["id"] for r in all_rows}
+        ticket_to_wid = {r["ticket_id"]: r["id"] for r in all_rows}
 
         # 分组设置状态
         all_tickets = sorted(ticket_to_wid.keys())

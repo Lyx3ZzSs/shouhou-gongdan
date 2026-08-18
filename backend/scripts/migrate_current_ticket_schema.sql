@@ -19,7 +19,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS public.workorder_review (
     id VARCHAR(64) PRIMARY KEY,
-    ticket_no VARCHAR(100) NOT NULL UNIQUE,
+    ticket_id BIGINT NOT NULL UNIQUE REFERENCES public.ticket (id),
     version INTEGER NOT NULL DEFAULT 1,
     lock_fencing_token BIGINT NOT NULL DEFAULT 0,
     review_status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
@@ -114,7 +114,7 @@ DROP VIEW IF EXISTS public.v_ticket;
 DROP VIEW IF EXISTS public.ticket_view;
 CREATE VIEW public.ticket_view AS
 SELECT
-    t.id, t.ticket_no, t."ownerId", t."dimDepart", t."entityType", t.name,
+    t.id, t."ownerId", t."dimDepart", t."entityType", t.name,
     t."case_Source" AS "caseSource",
     t."feedbackChannel_c" AS "feedbackChannel__c",
     t."workOrderStatus__c", t."caseDescription", t."caseStatus",

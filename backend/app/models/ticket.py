@@ -11,7 +11,6 @@ class TicketView(Base):
 
     # ticket 标识
     id = Column(BigInteger, primary_key=True)
-    ticket_no = Column(String(100))
 
     # 销售易业务字段（驼峰/__c 命名，与前端约定一致）
     ownerId = Column(String(64))

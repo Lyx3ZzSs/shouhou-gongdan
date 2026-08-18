@@ -30,7 +30,7 @@ export interface ReviewResponse {
 export interface WorkOrderData {
   id: string;
   version: number;
-  ticket_no: string | null;       // was: serial_number
+  ticket_id: number;
   review_status: string | null;   // was: status
   reject_count: number;
   last_reject_reason: string | null;

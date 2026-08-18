@@ -308,7 +308,7 @@ async def analyze_code_doc_alignment(config: TestConfig):
 
         for t in tickets[:5]:  # 采样前 5 条
             d = t.to_dict()
-            tn = d["ticket_no"]
+            ticket_id = d["id"]
 
             # 检查时间戳字段格式
             for ts_field in [
@@ -320,7 +320,7 @@ async def analyze_code_doc_alignment(config: TestConfig):
                     # 必须是 Unix 时间戳（全数字字符串）
                     if not str(val).isdigit():
                         issues.append(
-                            f"  ❌ {tn}.{ts_field}={val!r} — API 要求 Unix 时间戳"
+                            f"  ❌ ticket.id={ticket_id}.{ts_field}={val!r} — API 要求 Unix 时间戳"
                             f"（如 '1784797500'），实际是日期字符串"
                         )
 
@@ -329,7 +329,7 @@ async def analyze_code_doc_alignment(config: TestConfig):
                 val = d.get(rf)
                 if val is None or str(val).strip() == "":
                     issues.append(
-                        f"  ❌ {tn}.{rf} 为空 — 此字段是 API 必填字段"
+                        f"  ❌ ticket.id={ticket_id}.{rf} 为空 — 此字段是 API 必填字段"
                     )
 
     if issues:
@@ -400,19 +400,19 @@ async def test_full_pipeline(config: TestConfig, token_info: dict[str, str]):
 
         # 获取 ticket_view 数据
         r = await db.execute(
-            text("SELECT * FROM ticket_view WHERE ticket_no = :tn"),
-            {"tn": wo_row["ticket_no"]},
+            text("SELECT * FROM ticket_view WHERE id = :ticket_id"),
+            {"ticket_id": wo_row["ticket_id"]},
         )
         ticket_row = r.mappings().first()
         if ticket_row is None:
-            print(f"  ❌ ticket_no={wo_row['ticket_no']} 在 ticket_view 中不存在")
+            print(f"  ❌ ticket.id={wo_row['ticket_id']} 在 ticket_view 中不存在")
             return
 
         # merge: ticket_view 原始值 + field_overrides 覆盖
         ticket_dict = dict(ticket_row)
         overrides = wo_row.get("field_overrides") or {}
         merged = {**ticket_dict, **overrides}
-        print(f"  ticket_no: {wo_row['ticket_no']}")
+        print(f"  ticket_id: {wo_row['ticket_id']}")
         print(f"  merge keys: {len(merged)}")
         print(f"  overrides: {json.dumps(overrides, ensure_ascii=False)}")
 

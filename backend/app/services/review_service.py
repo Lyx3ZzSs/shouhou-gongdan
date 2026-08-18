@@ -45,10 +45,10 @@ class ConfirmResult:
     sync_idempotency_key: str | None = None  # None = 无需后台同步
 
 
-async def _get_ticket_dict(db: AsyncSession, ticket_no: str) -> dict | None:
+async def _get_ticket_dict(db: AsyncSession, ticket_id: int) -> dict | None:
     """从 ticket_view 视图获取工单业务数据。"""
     result = await db.execute(
-        select(TicketView).where(TicketView.ticket_no == ticket_no)
+        select(TicketView).where(TicketView.id == ticket_id)
     )
     ticket = result.scalar_one_or_none()
     if ticket is None:
@@ -125,13 +125,13 @@ async def background_sync_to_xiaoshouyi(
                     await db.commit()
                     return 'failed'
 
-                ticket_no = row.get("ticket_no")
+                ticket_id = row.get("ticket_id")
                 overrides = row.get("field_overrides") or {}
 
                 # 获取 ticket_view 业务数据
-                ticket_dict = await _get_ticket_dict(db, ticket_no)
+                ticket_dict = await _get_ticket_dict(db, ticket_id)
                 if ticket_dict is None:
-                    msg = f"ticket_no={ticket_no} 在 ticket_view 中不存在"
+                    msg = f"ticket.id={ticket_id} 在 ticket_view 中不存在"
                     logger.error("销售易同步失败: %s", msg)
                     await db.execute(
                         update(WorkOrderReview)
@@ -446,7 +446,7 @@ class ReviewService:
         review = result.scalar_one_or_none()
         if review is None:
             raise HTTPException(status_code=404, detail="工单不存在")
-        ticket = await _get_ticket_dict(self.db, review.ticket_no)
+        ticket = await _get_ticket_dict(self.db, review.ticket_id)
         if ticket is None:
             raise HTTPException(status_code=422, detail={
                 "message": "工单业务数据不存在", "valid": False,

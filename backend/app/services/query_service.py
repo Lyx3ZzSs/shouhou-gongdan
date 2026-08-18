@@ -1,7 +1,7 @@
 """只读查询服务 — JOIN workorder_review + ticket_view 获取完整工单数据。"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import String, select, func
 from fastapi import HTTPException
 
 from app.models.workorder import WorkOrderReview
@@ -26,7 +26,7 @@ class WorkOrderQueryService:
             sanitized = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             kw = f"%{sanitized}%"
             filt = (
-                WorkOrderReview.ticket_no.ilike(kw, escape='\\')
+                WorkOrderReview.ticket_id.cast(String).ilike(kw, escape='\\')
             )
             # Also search ticket_view by joining (handled in list_summaries)
             filters.append(filt)
@@ -47,7 +47,7 @@ class WorkOrderQueryService:
         base_query = (
             select(
                 WorkOrderReview.id,
-                WorkOrderReview.ticket_no,
+                WorkOrderReview.ticket_id,
                 WorkOrderReview.review_status,
                 WorkOrderReview.reject_count,
                 func.coalesce(TicketView.source_created_at, WorkOrderReview.created_at).label("created_at"),
@@ -62,7 +62,7 @@ class WorkOrderQueryService:
                 TicketView.bigCustShortName__c,
             )
             .select_from(WorkOrderReview)
-            .outerjoin(TicketView, WorkOrderReview.ticket_no == TicketView.ticket_no)
+            .outerjoin(TicketView, WorkOrderReview.ticket_id == TicketView.id)
         )
 
         # Apply filters
@@ -72,7 +72,7 @@ class WorkOrderQueryService:
             sanitized = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             kw = f"%{sanitized}%"
             base_query = base_query.where(
-                (WorkOrderReview.ticket_no.ilike(kw, escape='\\')) |
+                (WorkOrderReview.ticket_id.cast(String).ilike(kw, escape='\\')) |
                 (TicketView.name.ilike(kw, escape='\\')) |
                 (TicketView.caseAccountId.ilike(kw, escape='\\')) |
                 (TicketView.projectName__c.ilike(kw, escape='\\'))
@@ -82,13 +82,13 @@ class WorkOrderQueryService:
         count_query = (
             select(func.count())
             .select_from(WorkOrderReview)
-            .outerjoin(TicketView, WorkOrderReview.ticket_no == TicketView.ticket_no)
+            .outerjoin(TicketView, WorkOrderReview.ticket_id == TicketView.id)
         )
         if review_status:
             count_query = count_query.where(WorkOrderReview.review_status == review_status)
         if keyword:
             count_query = count_query.where(
-                (WorkOrderReview.ticket_no.ilike(kw, escape='\\')) |
+                (WorkOrderReview.ticket_id.cast(String).ilike(kw, escape='\\')) |
                 (TicketView.name.ilike(kw, escape='\\')) |
                 (TicketView.caseAccountId.ilike(kw, escape='\\')) |
                 (TicketView.projectName__c.ilike(kw, escape='\\'))
@@ -109,7 +109,7 @@ class WorkOrderQueryService:
         for row in rows:
             items.append(WorkOrderSummary(
                 id=row["id"],
-                ticket_no=row["ticket_no"],
+                ticket_id=row["ticket_id"],
                 name=row["name"],
                 review_status=row["review_status"],
                 caseAccountId=row["caseAccountId"],
@@ -136,7 +136,7 @@ class WorkOrderQueryService:
 
         # Get ticket_view data
         ticket_result = await self.db.execute(
-            select(TicketView).where(TicketView.ticket_no == review.ticket_no)
+            select(TicketView).where(TicketView.id == review.ticket_id)
         )
         ticket = ticket_result.scalar_one_or_none()
 
@@ -144,7 +144,7 @@ class WorkOrderQueryService:
         resp_dict = {
             "id": review.id,
             "version": review.version,
-            "ticket_no": review.ticket_no,
+            "ticket_id": review.ticket_id,
             "review_status": review.review_status,
             "reject_count": review.reject_count,
             "last_reject_reason": review.last_reject_reason,
@@ -167,9 +167,8 @@ class WorkOrderQueryService:
         original_data = {}
         if ticket is not None:
             ticket_dict = ticket.to_dict()
-            # Remove id and ticket_no from ticket dict (already in review metadata)
+            # Remove id from ticket dict (already in review metadata)
             ticket_dict.pop("id", None)
-            ticket_dict.pop("ticket_no", None)
             source_created_at = ticket_dict.pop("source_created_at", None)
             if source_created_at is not None:
                 resp_dict["created_at"] = source_created_at.isoformat()

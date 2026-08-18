@@ -93,7 +93,7 @@ export const FIELD_TEMPLATE: FieldDef[] = [
   { id: 'requireSolveTime__c', name: '要求解决时间', group: 'handling', type: 'datetime', originalValue: '1784883900' },
 
   // ---- 系统信息 (system) ----
-  { id: 'ticket_no', name: '工单编号', group: 'system', type: 'text', originalValue: 'WO-20260717-0381', readonly: true },
+  { id: 'ticket_id', name: '工单 ID', group: 'system', type: 'text', originalValue: '381', readonly: true },
 ];
 
 /** 异常模板 */
@@ -186,7 +186,7 @@ export function buildTicket(item: QueueItem): ReviewTicket {
   const isMain = item.id === MAIN_TICKET_ID;
   const fields = FIELD_TEMPLATE.map((f) => ({
     ...f,
-    ...(f.id === 'ticket_no' ? { originalValue: item.serialNumber } : {}),
+    ...(f.id === 'ticket_id' ? { originalValue: item.serialNumber } : {}),
     ...(f.id === 'name' ? { originalValue: item.title } : {}),
     ...(f.id === 'workOrderStatus__c' ? { originalValue: isMain ? '1' : '1' } : {}),
     ...(f.id === 'created_at' ? { originalValue: item.createdAt } : {}),

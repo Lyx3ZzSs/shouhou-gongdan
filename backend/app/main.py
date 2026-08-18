@@ -190,6 +190,16 @@ async def readiness_check():
                    AND to_regclass('public.review_submission') IS NOT NULL
                    AND EXISTS (
                        SELECT 1 FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name='workorder_review'
+                         AND column_name='ticket_id'
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name='workorder_review'
+                         AND column_name='ticket_no'
+                   )
+                   AND EXISTS (
+                       SELECT 1 FROM information_schema.columns
                        WHERE table_schema='public' AND table_name='ticket_view'
                          AND column_name='stationName'
                    )

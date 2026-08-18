@@ -657,8 +657,8 @@ fields:
     ui_visible: true
 
   # ====== 系统信息 ======
-  - key: ticket_no
-    name: 工单编号
+  - key: ticket_id
+    name: 工单 ID
     group: system
     type: text
     readonly: true

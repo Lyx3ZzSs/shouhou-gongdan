@@ -13,7 +13,7 @@ async def main():
         workorders = r.json()['items']
         print(f'工单列表: {len(workorders)} 条')
         for w in workorders:
-            print(f"  {w['id']} | {w['ticket_no']} | {w['review_status']}")
+            print(f"  {w['id']} | ticket_id={w['ticket_id']} | {w['review_status']}")
 
         # 取第一条待审核工单
         target = next((w for w in workorders if w['review_status'] == 'pending_review'), None)

@@ -94,13 +94,13 @@ async def db(engine):
         """))
         await conn.execute(text("""
             INSERT INTO ticket (
-                id, ticket_no, session_id, "ownerId", "dimDepart", "entityType",
+                id, session_id, "ownerId", "dimDepart", "entityType",
                 name, "case_Source", "feedbackChannel_c", "workOrderStatus__c",
                 "caseDescription", "caseStatus", "problemLevel_c", "problemType1__c",
                 "problemType2__c", "problemType3__c", "problemResponsible_c",
                 "problemDept_c", "needCallBack__c", "needOnSite__c"
             ) VALUES (
-                9001, 'T-E2E-001', 8001, 'u1', 'd1', '11010045500001',
+                9001, 8001, 'u1', 'd1', '11010045500001',
                 '测试场站功率控制异常', '1',
                 '1', '1', '测试场站功率控制持续异常，需要技术人员排查',
                 '1', '1', '2', '17', '47', 'engineer-1', '技术支持部', '2', '2'
@@ -108,8 +108,8 @@ async def db(engine):
         """))
         await conn.execute(text("""
             INSERT INTO workorder_review (
-                id, ticket_no, version, lock_fencing_token, review_status
-            ) VALUES ('WO-E2E-001', 'T-E2E-001', 1, 7, 'pending_review')
+                id, ticket_id, version, lock_fencing_token, review_status
+            ) VALUES ('WO-E2E-001', 9001, 1, 7, 'pending_review')
         """))
     async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
@@ -198,7 +198,7 @@ async def test_current_source_view_preserves_domain_contract(db):
         SELECT "caseSource", "feedbackChannel__c", "problemLevel__c",
                "caseAccountId", "stationName", "projectName__c",
                "isOverdueService__c", source_created_at
-        FROM ticket_view WHERE ticket_no='T-E2E-001'
+        FROM ticket_view WHERE id=9001
     """))).one()
     assert tuple(row[:7]) == ('1', '1', '1', 'ACC-001', '测试风场', '测试项目', '2')
     assert row.source_created_at is not None
@@ -211,7 +211,7 @@ async def test_import_current_wechat_ticket_is_idempotent(db):
     assert await import_workorders(db) == 1
     assert await import_workorders(db) == 0
     row = (await db.execute(text("""
-        SELECT ticket_no, initiator, initiator_department
+        SELECT ticket_id, initiator, initiator_department
         FROM workorder_review
     """))).one()
-    assert tuple(row) == ('T-E2E-001', '测试客户', '微信')
+    assert tuple(row) == (9001, '测试客户', '微信')

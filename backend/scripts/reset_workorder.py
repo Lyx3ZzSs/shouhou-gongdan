@@ -12,7 +12,7 @@ async def reset():
             sync_status='pending', sync_attempts=0, sync_last_error=NULL,
             sync_external_id=NULL, sync_idempotency_key=NULL,
             reject_count=0, last_reject_reason=NULL, last_rejected_by=NULL, last_rejected_at=NULL
-            WHERE ticket_no='SRV-2026-0099'
+            WHERE ticket_id = (SELECT id FROM ticket WHERE source_id = 9999)
         '''))
         await db.commit()
     print('done')

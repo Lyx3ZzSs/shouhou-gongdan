@@ -12,7 +12,7 @@
 --   · ticket_view 为【服务工单】唯一视图，不属于外部 8 表
 --
 -- 【审查数据表】审核流程自身产生的数据 — 审核操作写入
---   · workorder_review      审核元数据（主表，通过 ticket_no 关联工单数据表）
+--   · workorder_review      审核元数据（主表，通过 ticket_id 关联工单数据表）
 --   · workorder_audit_log   审核审计日志
 --   · bad_case_sample       坏例样本（模型回流）
 --   · workorder_stash       审核进度暂存
@@ -121,7 +121,6 @@ CREATE TABLE IF NOT EXISTS beisen_employee_cache (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ticket (
     id                      BIGSERIAL       PRIMARY KEY,
-    ticket_no               VARCHAR(50)     NOT NULL,
     source_id               BIGINT          NULL UNIQUE REFERENCES source_message (id),
     session_id              BIGINT          NULL UNIQUE REFERENCES wechat_session (id),
     "ownerId"               VARCHAR(64)     NOT NULL,
@@ -167,18 +166,18 @@ CREATE TABLE IF NOT EXISTS ticket_attachment (
 -- ============================================================================
 -- 二、审查数据表 — 审核流程数据（审核操作写入）
 --   workorder_review / workorder_audit_log / bad_case_sample / workorder_stash
---   通过 workorder_review.ticket_no 关联【服务工单】ticket_view
+--   通过 workorder_review.ticket_id 关联【服务工单】ticket_view
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
 -- public.workorder_review — 审核元数据表【审查数据表 · 主表】
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.workorder_review (
-    -- 主键（与 ticket.id 对应）
+    -- 审核队列内部主键
     id                      VARCHAR(64)     NOT NULL,
 
-    -- 关联键（关联 ticket.ticket_no）
-    ticket_no               VARCHAR(100)    NOT NULL,
+    -- 关联键和导入幂等键（关联 ticket.id）
+    ticket_id               BIGINT          NOT NULL REFERENCES public.ticket (id),
 
     -- 乐观锁版本号
     version                 INTEGER         NOT NULL DEFAULT 1,
@@ -221,7 +220,7 @@ CREATE TABLE IF NOT EXISTS public.workorder_review (
     updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
 
     CONSTRAINT workorder_review_pkey PRIMARY KEY (id),
-    CONSTRAINT workorder_review_ticket_no_key UNIQUE (ticket_no)
+    CONSTRAINT workorder_review_ticket_id_key UNIQUE (ticket_id)
 );
 
 -- workorder_review 索引（列表/统计/同步恢复/同步失败查询）
@@ -308,13 +307,12 @@ CREATE INDEX IF NOT EXISTS idx_submission_workorder ON public.review_submission 
 --
 -- 从 8 张源表构建，保持审核应用既有销售易字段名契约。
 -- 提供审核模块统一的工单业务数据查询入口。
--- 审查数据表通过 workorder_review.ticket_no 关联本视图。
+-- 审查数据表通过 workorder_review.ticket_id 关联本视图。
 -- ============================================================================
 DROP VIEW IF EXISTS public.ticket_view;
 CREATE VIEW public.ticket_view AS
 SELECT
     t.id,
-    t.ticket_no,
     t."ownerId",
     t."dimDepart",
     t."entityType",

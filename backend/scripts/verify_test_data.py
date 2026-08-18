@@ -16,17 +16,17 @@ async def verify():
 
         # 1. Check workorder_review + ticket_view JOIN
         result = await db.execute(text("""
-            SELECT wr.id, wr.ticket_no, wr.review_status, wr.sync_status,
+            SELECT wr.id, wr.ticket_id, wr.review_status, wr.sync_status,
                    vt.name, vt."caseAccountId", vt."projectName__c",
                    wr.reviewed_by, wr.reject_count, wr.review_notes
             FROM workorder_review wr
-            LEFT JOIN ticket_view vt ON wr.ticket_no = vt.ticket_no
-            ORDER BY wr.ticket_no
+            LEFT JOIN ticket_view vt ON wr.ticket_id = vt.id
+            ORDER BY wr.ticket_id
         """))
         rows = list(result.mappings())
         print(f"\n📋 workorder_review + ticket_view JOIN: {len(rows)} rows")
         for r in rows:
-            print(f"  {r['ticket_no']:16s} | {r['review_status']:16s} | sync={r['sync_status']:8s} | {r['name'] or '(no ticket_view data)'}")
+            print(f"  {r['ticket_id']:16d} | {r['review_status']:16s} | sync={r['sync_status']:8s} | {r['name'] or '(no ticket_view data)'}")
 
         # 2. Check status distribution
         result = await db.execute(text("""

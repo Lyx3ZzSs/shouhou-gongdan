@@ -30,7 +30,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Workorders */
+        /**
+         * List Workorders
+         * @description 工单列表（分页 + 搜索）。
+         *
+         *     - status: 按工单状态筛选（pending_review / confirmed / stashed）
+         *     - keyword: 按序列号/站点/客户/项目名模糊搜索
+         *     - offset/limit: 分页参数（默认每页 50 条）
+         */
         get: operations["list_workorders_api_workorders_get"];
         put?: never;
         post?: never;
@@ -66,7 +73,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Review Workorder */
+        /**
+         * Review Workorder
+         * @deprecated
+         * @description [已废弃] 请使用 POST /{workorder_id}/confirm 代替。
+         *
+         *     本端点仍可正常使用，但将在未来版本中移除。
+         */
         post: operations["review_workorder_api_workorders__workorder_id__review_post"];
         delete?: never;
         options?: never;
@@ -85,10 +98,41 @@ export interface paths {
         put?: never;
         /**
          * Confirm Workorder
-         * @description 确认提交：审核通过后本地落库，后台异步同步至销售易。
+         * @description 确认提交：本地落库后立即返回，后台异步同步至销售易。
          */
         post: operations["confirm_workorder_api_workorders__workorder_id__confirm_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workorders/{workorder_id}/stash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stash
+         * @description 获取暂存的审核进度。无暂存时返回空数据，避免将正常初始状态报为 404。
+         */
+        get: operations["get_stash_api_workorders__workorder_id__stash_get"];
+        put?: never;
+        /**
+         * Stash Workorder
+         * @description 暂存审核进度。
+         *
+         *     mode='manual': 标记工单为 stashed + 释放锁，其他人可接手。
+         *     mode='auto_save': 仅保存进度，不改变工单状态，不释放锁。
+         */
+        post: operations["stash_workorder_api_workorders__workorder_id__stash_post"];
+        /**
+         * Delete Stash
+         * @description 删除暂存的审核进度（用户丢弃修改时调用）。
+         */
+        delete: operations["delete_stash_api_workorders__workorder_id__stash_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -103,6 +147,289 @@ export interface paths {
         };
         /** Get Audit Logs */
         get: operations["get_audit_logs_api_workorders__workorder_id__audit_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import New Workorders
+         * @description 将源表新增工单幂等导入审核队列。
+         */
+        post: operations["import_new_workorders_api_admin_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sync-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sync Failures
+         * @description 列出同步失败的工单（sync_status='failed'）。
+         */
+        get: operations["list_sync_failures_api_admin_sync_failures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sync-failures/{workorder_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Sync
+         * @description 手动重试指定工单的销售易同步。
+         *
+         *     支持 failed / pending 状态的工单重试。已存在 sync_external_id
+         *     的记录（幂等已完成）将被直接标记为 synced 而不重复调用 API。
+         */
+        post: operations["retry_sync_api_admin_sync_failures__workorder_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sync-uncertain/{workorder_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Uncertain Sync
+         * @description 人工确认销售易已创建工单，并绑定其外部工单号。
+         */
+        post: operations["reconcile_uncertain_sync_api_admin_sync_uncertain__workorder_id__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sync-uncertain/{workorder_id}/confirm-not-created": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Uncertain Not Created
+         * @description 人工确认销售易未创建工单，将 uncertain 转为可人工重试的 failed。
+         */
+        post: operations["confirm_uncertain_not_created_api_admin_sync_uncertain__workorder_id__confirm_not_created_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Overview
+         * @description 总览：已审核总数、今日审核、平均耗时、通过率、待审核数。
+         */
+        get: operations["stats_overview_api_stats_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/by-reviewer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats By Reviewer
+         * @description 按审核人员统计审核量、通过/驳回数、平均耗时。
+         */
+        get: operations["stats_by_reviewer_api_stats_by_reviewer_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Trends
+         * @description 每日审核趋势（最近 N 天）。
+         */
+        get: operations["stats_trends_api_stats_trends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/duration-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Duration Distribution
+         * @description 审核耗时分布（按区间）。
+         */
+        get: operations["stats_duration_distribution_api_stats_duration_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/status-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Status Distribution
+         * @description 工单状态分布（待审核/已通过/已驳回）。
+         */
+        get: operations["stats_status_distribution_api_stats_status_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/field-corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Field Corrections
+         * @description 错误字段聚合：按字段统计修正频次（审核员最常纠正哪些字段）。
+         */
+        get: operations["stats_field_corrections_api_stats_field_corrections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/efficiency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats Efficiency
+         * @description 售后效率趋势：按周聚合一次通过率/返工/修正量/同步接受率。
+         */
+        get: operations["stats_efficiency_api_stats_efficiency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Check
+         * @description 健康检查端点 — 可用于 Docker healthcheck / K8s liveness probe。
+         */
+        get: operations["health_check_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness Check
+         * @description 就绪探针：依赖与核心数据库契约均可用时才接收审核流量。
+         */
+        get: operations["readiness_check_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -135,19 +462,23 @@ export interface components {
             session_id: string;
             /** Version */
             version: number;
-            /**
-             * Changes
-             * @default []
-             */
-            changes: components["schemas"]["FieldChange"][];
+            /** Changes */
+            changes?: components["schemas"]["FieldChange"][];
             /** Reject Reason */
             reject_reason?: string | null;
+            /** Review Notes */
+            review_notes?: string | null;
             /** Idempotency Key */
             idempotency_key: string;
+            /** Lock Fencing Token */
+            lock_fencing_token: number;
         };
         /**
          * ConfirmResponse
-         * @description 确认提交响应 — 新增 sync_status 表示销售易同步状态。
+         * @description 确认提交响应。
+         *
+         *     sync_status 始终为 "pending"：确认提交后由 BackgroundTasks 异步同步至销售易，
+         *     实际同步结果（synced / failed）需通过 GET /api/admin/sync-failures 查询。
          */
         ConfirmResponse: {
             /** Review Id */
@@ -163,14 +494,14 @@ export interface components {
             change_count: number;
             /** Bad Case Count */
             bad_case_count: number;
-            /** Next Status */
+            /** Next Review Status */
             next_review_status: string;
             /**
              * Sync Status
              * @default pending
              * @enum {string}
              */
-            sync_status: "pending" | "synced" | "failed";
+            sync_status: "pending" | "syncing" | "synced" | "failed" | "uncertain";
         };
         /** FieldChange */
         FieldChange: {
@@ -206,6 +537,27 @@ export interface components {
             locked_minutes?: number | null;
             /** Status */
             status?: string | null;
+            /** Fencing Token */
+            fencing_token?: number | null;
+        };
+        /**
+         * PaginatedWorkOrderSummary
+         * @description 分页工单摘要列表。
+         */
+        PaginatedWorkOrderSummary: {
+            /** Items */
+            items: components["schemas"]["WorkOrderSummary"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** ReconcileSyncRequest */
+        ReconcileSyncRequest: {
+            /** External Id */
+            external_id: string;
         };
         /** ReviewRequest */
         ReviewRequest: {
@@ -213,13 +565,14 @@ export interface components {
             session_id: string;
             /** Version */
             version: number;
-            /**
-             * Changes
-             * @default []
-             */
-            changes: components["schemas"]["FieldChange"][];
+            /** Changes */
+            changes?: components["schemas"]["FieldChange"][];
             /** Reject Reason */
             reject_reason?: string | null;
+            /** Review Notes */
+            review_notes?: string | null;
+            /** Lock Fencing Token */
+            lock_fencing_token: number;
         };
         /** ReviewResponse */
         ReviewResponse: {
@@ -236,8 +589,56 @@ export interface components {
             change_count: number;
             /** Bad Case Count */
             bad_case_count: number;
-            /** Next Status */
+            /** Next Review Status */
             next_review_status: string;
+        };
+        /**
+         * StashData
+         * @description Response for GET /api/workorders/{id}/stash
+         */
+        StashData: {
+            /** Field States */
+            field_states?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /**
+         * StashRequest
+         * @description 暂存请求 — 保存当前审核进度到服务端。
+         *
+         *     mode='manual': 标记工单为 stashed，释放编辑锁。
+         *     mode='auto_save': 仅保存进度，不改变工单状态，不释放锁。
+         */
+        StashRequest: {
+            /** Field States */
+            field_states?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Mode
+             * @default manual
+             * @enum {string}
+             */
+            mode: "manual" | "auto_save";
+            /** Lock Fencing Token */
+            lock_fencing_token: number;
+        };
+        /** StashResponse */
+        StashResponse: {
+            /** Status */
+            status: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -252,15 +653,44 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** ValidationIssue */
+        ValidationIssue: {
+            /** Code */
+            code: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "blocking" | "warning" | "info";
+            /** Field */
+            field?: string | null;
+            /** Related Fields */
+            related_fields?: string[];
+            /** Message */
+            message: string;
+        };
+        /** ValidationResult */
+        ValidationResult: {
+            /** Valid */
+            valid: boolean;
+            /** Blocking Count */
+            blocking_count: number;
+            /** Warning Count */
+            warning_count: number;
+            /** Issues */
+            issues: components["schemas"]["ValidationIssue"][];
+        };
         /**
          * WorkOrderResponse
-         * @description Response for GET /api/workorders/{id} — mirrors frontend WorkOrderData.
+         * @description Response for GET /api/workorders/{id} — merges ticket_view business fields + workorder_review metadata.
          */
         WorkOrderResponse: {
             /** Id */
             id: string;
             /** Version */
             version: number;
+            /** Ticket Id */
+            ticket_id: number;
             /** Review Status */
             review_status?: string | null;
             /**
@@ -274,72 +704,107 @@ export interface components {
             last_rejected_by?: string | null;
             /** Last Rejected At */
             last_rejected_at?: string | null;
-            /** Ticket No */
-            ticket_no?: string | null;
+            /** Review Notes */
+            review_notes?: string | null;
             /** Created At */
             created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
             /** Initiator */
             initiator?: string | null;
             /** Initiator Department */
             initiator_department?: string | null;
-            /** Station Name */
-            station_name?: string | null;
-            /** Dispatch Name */
-            dispatch_name?: string | null;
-            /** Project Code */
-            project_code?: string | null;
-            /** Project Name */
-            project_name?: string | null;
-            /** Project Province */
-            project_province?: string | null;
-            /** Customer Name */
-            customer_name?: string | null;
-            /** Problem Description */
-            problem_description?: string | null;
-            /** Feedback Channel */
-            feedback_channel?: string | null;
-            /** Product Line */
-            product_line?: string | null;
-            /** Product Category */
-            product_category?: string | null;
-            /** Product Type */
-            product_type?: string | null;
-            /** Customer Level */
-            customer_level?: string | null;
-            /** Problem Category L1 */
-            problem_category_l1?: string | null;
-            /** Problem Category L2 */
-            problem_category_l2?: string | null;
-            /** Problem Category L3 */
-            problem_category_l3?: string | null;
-            /** Order Type */
-            order_type?: string | null;
-            /** Problem Type */
-            problem_type?: string | null;
-            /** Fault Category */
-            fault_category?: string | null;
-            /** Fault Detail */
-            fault_detail?: string | null;
-            /** Responsible Person */
-            responsible_person?: string | null;
-            /** Responsible Department */
-            responsible_department?: string | null;
-            /** Primary Department */
-            primary_department?: string | null;
-            /** After Sales Person */
-            after_sales_person?: string | null;
-            /** Transferred Person */
-            transferred_person?: string | null;
-            /** Transferred Department */
-            transferred_department?: string | null;
-            /** Order Level */
-            order_level?: string | null;
-            /** Fault Level */
-            fault_level?: string | null;
-            /** Onsite Level */
-            onsite_level?: string | null;
-            /** Required Solve Time */
-            required_solve_time?: string | null;
+            /** Field Overrides */
+            field_overrides?: {
+                [key: string]: unknown;
+            } | null;
+            /** Original Data */
+            original_data?: {
+                [key: string]: unknown;
+            } | null;
+            validation?: components["schemas"]["ValidationResult"] | null;
+            /** Sync Status */
+            sync_status?: string | null;
+            /** Sync External Id */
+            sync_external_id?: string | null;
+            /** Sync Last Error */
+            sync_last_error?: string | null;
+            /** Review Started At */
+            review_started_at?: string | null;
+            /** Review Duration Seconds */
+            review_duration_seconds?: number | null;
+            /** Ownerid */
+            ownerId?: string | null;
+            /** Dimdepart */
+            dimDepart?: string | null;
+            /** Entitytype */
+            entityType?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Casesource */
+            caseSource?: string | null;
+            /** Feedbackchannel  C */
+            feedbackChannel__c?: string | null;
+            /** Workorderstatus  C */
+            workOrderStatus__c?: string | null;
+            /** Casedescription */
+            caseDescription?: string | null;
+            /** Casestatus */
+            caseStatus?: string | null;
+            /** Caseaccountid */
+            caseAccountId?: string | null;
+            /** Custlevel1  C */
+            custLevel1__c?: string | null;
+            /** Projectname  C */
+            projectName__c?: string | null;
+            /** Projectprovince  C */
+            projectProvince__c?: string | null;
+            /** Bigcustshortname  C */
+            bigCustShortName__c?: string | null;
+            /** Servicecyclestart  C */
+            serviceCycleStart__c?: string | null;
+            /** Servicecycleend  C */
+            serviceCycleEnd__c?: string | null;
+            /** Isofflineapply  C */
+            isOfflineApply__c?: string | null;
+            /** Isoverdueservice  C */
+            isOverdueService__c?: string | null;
+            /** Stationname */
+            stationName?: string | null;
+            /** Problemlevel  C */
+            problemLevel__c?: string | null;
+            /** Problemtype1  C */
+            problemType1__c?: string | null;
+            /** Problemtype2  C */
+            problemType2__c?: string | null;
+            /** Problemtype3  C */
+            problemType3__c?: string | null;
+            /** Feedbackcount  C */
+            feedbackCount__c?: string | null;
+            /** Problemresponsible  C */
+            problemResponsible__c?: string | null;
+            /** Problemdept  C */
+            problemDept__c?: string | null;
+            /** Feedbackusername  C */
+            feedbackUserName__c?: string | null;
+            /** Feedbackusercontact  C */
+            feedbackUserContact__c?: string | null;
+            /** Needcallback  C */
+            needCallBack__c?: string | null;
+            /** Ishandled  C */
+            isHandled__c?: string | null;
+            /** Needonsite  C */
+            needOnSite__c?: string | null;
+            /** Remark  C */
+            remark__c?: string | null;
+            /** Relatedattachment  C */
+            relatedAttachment__c?: string | null;
+            /** Planfeedbacktime  C */
+            planFeedbackTime__c?: string | null;
+            /** Requiresolvetime  C */
+            requireSolveTime__c?: string | null;
+            /** Defectflag  C */
+            defectFlag__c?: string | null;
         };
         /**
          * WorkOrderSummary
@@ -348,14 +813,16 @@ export interface components {
         WorkOrderSummary: {
             /** Id */
             id: string;
-            /** Ticket No */
-            ticket_no?: string | null;
-            /** Station Name */
-            station_name?: string | null;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Name */
+            name?: string | null;
             /** Review Status */
             review_status?: string | null;
-            /** Customer Name */
-            customer_name?: string | null;
+            /** Caseaccountid */
+            caseAccountId?: string | null;
+            /** Bigcustshortname  C */
+            bigCustShortName__c?: string | null;
             /** Created At */
             created_at?: string | null;
         };
@@ -371,7 +838,9 @@ export interface operations {
     heartbeat_lock_api_workorders__workorder_id__lock_put: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Lock-Fencing-Token": number;
+            };
             path: {
                 workorder_id: string;
             };
@@ -433,7 +902,9 @@ export interface operations {
     release_lock_api_workorders__workorder_id__lock_delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Lock-Fencing-Token": number;
+            };
             path: {
                 workorder_id: string;
             };
@@ -463,7 +934,12 @@ export interface operations {
     };
     list_workorders_api_workorders_get: {
         parameters: {
-            query?: never;
+            query?: {
+                status?: string | null;
+                keyword?: string | null;
+                offset?: number;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -476,7 +952,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkOrderSummary"][];
+                    "application/json": components["schemas"]["PaginatedWorkOrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -582,6 +1067,105 @@ export interface operations {
             };
         };
     };
+    get_stash_api_workorders__workorder_id__stash_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StashData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stash_workorder_api_workorders__workorder_id__stash_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StashRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StashResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_stash_api_workorders__workorder_id__stash_delete: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Lock-Fencing-Token": number;
+            };
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StashResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_audit_logs_api_workorders__workorder_id__audit_logs_get: {
         parameters: {
             query?: never;
@@ -609,6 +1193,379 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_new_workorders_api_admin_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_sync_failures_api_admin_sync_failures_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_sync_api_admin_sync_failures__workorder_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_uncertain_sync_api_admin_sync_uncertain__workorder_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_uncertain_not_created_api_admin_sync_uncertain__workorder_id__confirm_not_created_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workorder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_overview_api_stats_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    stats_by_reviewer_api_stats_by_reviewer_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_trends_api_stats_trends_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_duration_distribution_api_stats_duration_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    stats_status_distribution_api_stats_status_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    stats_field_corrections_api_stats_field_corrections_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_efficiency_api_stats_efficiency_get: {
+        parameters: {
+            query?: {
+                weeks?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_check_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    readiness_check_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

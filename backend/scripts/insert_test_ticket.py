@@ -14,7 +14,6 @@ from app.core.config import settings
 # ── 用户提供的测试数据（已映射为正确的 camelCase 列名）────────────────
 TICKET_DATA = {
     # ticket 表字段
-    "ticket_no": "SRV-2026-0099",
     "ownerId": "101634",
     "dimDepart": "sprixin",
     "entityType": "11010045500001",
@@ -102,8 +101,7 @@ async def main():
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS ticket (
                     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                    ticket_no VARCHAR(100) NOT NULL UNIQUE,
-                    source_id BIGINT REFERENCES source_message(id),
+                    source_id BIGINT UNIQUE REFERENCES source_message(id),
                     "ownerId" VARCHAR(64),
                     "dimDepart" VARCHAR(128),
                     "entityType" VARCHAR(32) DEFAULT '11010045500001',
@@ -163,7 +161,7 @@ async def main():
             await db.execute(text("""
                 CREATE VIEW ticket_view AS
                 SELECT
-                    t.id, t.ticket_no,
+                    t.id,
                     t."ownerId", t."dimDepart", t."entityType", t.name,
                     t."caseSource", t."feedbackChannel__c", t."workOrderStatus__c",
                     t."caseDescription", t."caseStatus",
@@ -222,7 +220,7 @@ async def main():
             await db.execute(
                 text("""
                     INSERT INTO ticket (
-                        ticket_no, source_id,
+                        source_id,
                         "ownerId", "dimDepart", "entityType", name,
                         "caseSource", "feedbackChannel__c", "workOrderStatus__c",
                         "caseDescription", "caseStatus",
@@ -233,7 +231,7 @@ async def main():
                         "remark__c", "planFeedbackTime__c", "requireSolveTime__c", "defectFlag__c",
                         "caseAccountId"
                     ) VALUES (
-                        :ticket_no, :source_id,
+                        :source_id,
                         :ownerId, :dimDepart, :entityType, :name,
                         :caseSource, :feedbackChannel__c, :workOrderStatus__c,
                         :caseDescription, :caseStatus,
@@ -246,7 +244,6 @@ async def main():
                     )
                 """),
                 {
-                    "ticket_no": TICKET_DATA["ticket_no"],
                     "source_id": 9999,
                     "ownerId": TICKET_DATA["ownerId"],
                     "dimDepart": TICKET_DATA["dimDepart"],
@@ -290,21 +287,21 @@ async def main():
         async with async_session() as db:
             # ticket_view 查询
             r = await db.execute(
-                text("SELECT ticket_no, name, \"caseAccountId\", \"projectName__c\" FROM ticket_view")
+                text("SELECT id, name, \"caseAccountId\", \"projectName__c\" FROM ticket_view")
             )
             rows = r.mappings().all()
             print(f"  ticket_view 记录数: {len(rows)}")
             for row in rows:
-                print(f"    {row['ticket_no']} | {row['name']} | {row['caseAccountId']} | {row['projectName__c']}")
+                print(f"    {row['id']} | {row['name']} | {row['caseAccountId']} | {row['projectName__c']}")
 
             # workorder_review 查询
             r = await db.execute(
-                text("SELECT id, ticket_no, review_status, sync_status FROM workorder_review")
+                text("SELECT id, ticket_id, review_status, sync_status FROM workorder_review")
             )
             rows = r.mappings().all()
             print(f"  workorder_review 记录数: {len(rows)}")
             for row in rows:
-                print(f"    {row['id']} | {row['ticket_no']} | {row['review_status']} | {row['sync_status']}")
+                print(f"    {row['id']} | {row['ticket_id']} | {row['review_status']} | {row['sync_status']}")
 
         print("\n✅ 完成！")
 

@@ -283,11 +283,7 @@ async def import_new_workorders(
     db: AsyncSession = Depends(get_db),
 ):
     """将源表新增工单幂等导入审核队列。"""
-    try:
-        count = await import_workorders(db)
-    except ValueError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    count = await import_workorders(db)
     return {"imported": count}
 
 
@@ -308,7 +304,7 @@ async def list_sync_failures(
     return [
         {
             "id": r.id,
-            "ticket_no": r.ticket_no,
+            "ticket_id": r.ticket_id,
             "sync_attempts": r.sync_attempts,
             "sync_last_error": r.sync_last_error,
             "sync_status": r.sync_status,
@@ -403,10 +399,10 @@ async def reconcile_uncertain_sync(
             sync_external_id=external_id,
             sync_last_error=None,
         )
-        .returning(WorkOrderReview.ticket_no)
+        .returning(WorkOrderReview.ticket_id)
     )
-    ticket_no = result.scalar_one_or_none()
-    if ticket_no is None:
+    ticket_id = result.scalar_one_or_none()
+    if ticket_id is None:
         check = await db.execute(select(WorkOrderReview).where(WorkOrderReview.id == workorder_id))
         if check.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="工单不存在")
@@ -415,7 +411,7 @@ async def reconcile_uncertain_sync(
     return {
         "status": "synced",
         "workorder_id": workorder_id,
-        "ticket_no": ticket_no,
+        "ticket_id": ticket_id,
         "sync_external_id": external_id,
     }
 
@@ -438,13 +434,13 @@ async def confirm_uncertain_not_created(
             sync_last_error='管理员已核实销售易未创建，可人工重试',
             sync_started_at=None,
         )
-        .returning(WorkOrderReview.ticket_no)
+        .returning(WorkOrderReview.ticket_id)
     )
-    ticket_no = result.scalar_one_or_none()
-    if ticket_no is None:
+    ticket_id = result.scalar_one_or_none()
+    if ticket_id is None:
         check = await db.execute(select(WorkOrderReview).where(WorkOrderReview.id == workorder_id))
         if check.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="工单不存在")
         raise HTTPException(status_code=409, detail="只有结果待核实且未绑定外部单号的工单可以确认未创建")
     await db.commit()
-    return {"status": "failed", "workorder_id": workorder_id, "ticket_no": ticket_no}
+    return {"status": "failed", "workorder_id": workorder_id, "ticket_id": ticket_id}

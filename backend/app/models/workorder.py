@@ -13,8 +13,8 @@ class WorkOrderReview(Base):
     # Primary key
     id = Column(String(64), primary_key=True)
 
-    # FK to ticket (via ticket_no, not DB FK)
-    ticket_no = Column(String(100), nullable=False, unique=True)
+    # Source ticket linkage and import idempotency key
+    ticket_id = Column(BigInteger, nullable=False, unique=True)
 
     # Optimistic locking
     version = Column(Integer, default=1, nullable=False)

@@ -35,7 +35,7 @@ describe('review queue initialization', () => {
     ['the API is empty', []],
     ['the API only returns a filtered-out confirmed ticket', [{
       id: 'confirmed-1',
-      ticket_no: '88',
+      ticket_id: 88,
       review_status: 'confirmed',
       created_at: null,
     }]],

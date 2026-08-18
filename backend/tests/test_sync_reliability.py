@@ -42,7 +42,7 @@ def _result(*, rowcount=1, mapping=None, rows=None):
 async def test_recovered_sync_uses_existing_claim_and_does_not_claim_again():
     read_db = AsyncMock()
     read_db.execute = AsyncMock(return_value=_result(mapping={
-        "ticket_no": "T-1", "field_overrides": {},
+        "ticket_id": 1, "field_overrides": {},
     }))
     write_db = AsyncMock()
     client = SimpleNamespace(create_work_order=AsyncMock(return_value=SimpleNamespace(external_id="XSY-1")))
@@ -64,7 +64,7 @@ async def test_post_that_never_returns_converges_to_uncertain(monkeypatch):
     claim_db.execute = AsyncMock(return_value=_result(rowcount=1))
     read_db = AsyncMock()
     read_db.execute = AsyncMock(return_value=_result(mapping={
-        "ticket_no": "T-1", "field_overrides": {},
+        "ticket_id": 1, "field_overrides": {},
     }))
     uncertain_db = AsyncMock()
 

@@ -307,7 +307,7 @@ const FIELD_MAPPING: FieldMapping[] = [
   { backendKey: 'requireSolveTime__c', id: 'requireSolveTime__c', name: '要求解决时间', group: 'handling', type: 'datetime' },
 
   // ---- 系统信息 (system) ----
-  { backendKey: 'ticket_no', id: 'ticket_no', name: '工单编号', group: 'system', type: 'text', readonly: true },
+  { backendKey: 'ticket_id', id: 'ticket_id', name: '工单 ID', group: 'system', type: 'text', readonly: true },
 ];
 
 const MAPPING_BY_KEY: Record<string, FieldMapping> = {};
@@ -325,7 +325,7 @@ export function workOrderSummaryToQueueItem(
   const status = normalizeStatus((summary as Record<string, unknown>).review_status as string);
   return {
     id: summary.id,
-    serialNumber: summary.ticket_no ?? '',
+    serialNumber: String(summary.ticket_id),
     title: (summary as Record<string, unknown>).name as string
       ?? (summary as Record<string, unknown>).caseAccountId as string
       ?? '未知工单',
@@ -364,7 +364,7 @@ export function workOrderDataToReviewTicket(
 
   return {
     id: data.id,
-    serialNumber: data.ticket_no ?? '',
+    serialNumber: String(data.ticket_id),
     title: (dataRec.name as string)
       ?? (dataRec.projectName__c as string)
       ?? (dataRec.caseAccountId as string)
