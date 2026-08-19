@@ -44,7 +44,21 @@ class StatsService:
                     / NULLIF(COUNT(*) FILTER (WHERE review_status = 'confirmed'), 0)
                 )::numeric(5,1) AS one_pass_rate,
                 COUNT(*) FILTER (WHERE reject_count > 0) AS total_rejected,
-                COUNT(*) FILTER (WHERE review_status = 'pending_review') AS pending_count
+                COUNT(*) FILTER (WHERE review_status = 'pending_review') AS pending_count,
+                COUNT(*) FILTER (WHERE review_status = 'stashed') AS stashed_count,
+                COUNT(*) FILTER (WHERE sync_status IN ('failed', 'uncertain')) AS sync_failure_count,
+                ROUND(
+                    COUNT(*) FILTER (WHERE reject_count > 0) * 100.0
+                    / NULLIF(COUNT(*) FILTER (WHERE reviewed_at IS NOT NULL OR reject_count > 0), 0)
+                )::numeric(5,1) AS rejection_rate,
+                ROUND(
+                    (SELECT COUNT(*) FROM workorder_audit_log
+                     WHERE field_path IN (
+                        '/caseAccountId', '/projectName__c', '/problemResponsible__c',
+                        '/feedbackUserName__c', '/feedbackUserContact__c', '/caseDescription'
+                     )) * 100.0
+                    / NULLIF(COUNT(*) FILTER (WHERE reviewed_at IS NOT NULL OR reject_count > 0) * 6, 0)
+                )::numeric(5,1) AS ai_field_modification_rate
             FROM workorder_review
         """))
         row = result.mappings().first()

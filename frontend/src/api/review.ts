@@ -12,6 +12,7 @@ export type GeneratedReviewRequest = components['schemas']['ReviewRequest'];
 export type GeneratedReviewResponse = components['schemas']['ReviewResponse'];
 export type GeneratedLockStatus = components['schemas']['LockStatus'];
 export type GeneratedAuditLogEntry = components['schemas']['AuditLogEntry'];
+export type GeneratedPaginatedWorkOrderSummary = components['schemas']['PaginatedWorkOrderSummary'];
 
 const BASE = '/api/workorders';
 
@@ -92,13 +93,68 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   return res;
 }
 
-export async function fetchWorkOrderList(status?: string): Promise<GeneratedWorkOrderSummary[]> {
-  const params = status ? `?status=${encodeURIComponent(status)}` : '';
-  const res = await authFetch(`${BASE}${params}`);
+export async function fetchWorkOrderList(status?: string, keyword?: string): Promise<GeneratedWorkOrderSummary[]> {
+  return (await fetchWorkOrderPage(status, keyword)).items;
+}
+
+export async function fetchNextWorkOrder(): Promise<string | null> {
+  const res = await authFetch(`${BASE}/next`, { method: 'POST' });
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `领取下一张工单失败: ${res.status}`));
+  return ((await res.json()) as { workorder_id: string | null }).workorder_id;
+}
+
+export interface StationOption {
+  case_account_id: string;
+  station_name: string | null;
+  project_name: string | null;
+}
+
+export interface EmployeeOption {
+  job_number: string;
+  name: string | null;
+  dept_name: string | null;
+}
+
+export interface ReviewContext {
+  conversation: { role: string; content: string }[];
+  attachments: { file_name: string | null; file_path: string | null }[];
+  ledger: Record<string, string | null> | null;
+}
+
+async function fetchLookup<T>(kind: 'stations' | 'employees', keyword: string): Promise<T[]> {
+  const res = await authFetch(`${BASE}/lookups/${kind}?keyword=${encodeURIComponent(keyword)}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取候选项失败: ${res.status}`));
+  return res.json();
+}
+
+export const fetchStationOptions = (keyword: string) => fetchLookup<StationOption>('stations', keyword);
+export const fetchEmployeeOptions = (keyword: string) => fetchLookup<EmployeeOption>('employees', keyword);
+
+export async function fetchReviewContext(id: string): Promise<ReviewContext> {
+  const res = await authFetch(`${BASE}/${id}/context`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取核对材料失败: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchWorkOrderPage(
+  status?: string,
+  keyword?: string,
+  offset = 0,
+  limit = 50,
+  createdFrom?: string,
+  createdTo?: string,
+): Promise<GeneratedPaginatedWorkOrderSummary> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (keyword) params.set('keyword', keyword);
+  params.set('offset', String(offset));
+  params.set('limit', String(limit));
+  if (createdFrom) params.set('created_from', createdFrom);
+  if (createdTo) params.set('created_to', createdTo);
+  const query = params.size ? `?${params}` : '';
+  const res = await authFetch(`${BASE}${query}`);
   if (!res.ok) throw new Error(await extractErrorDetail(res, `获取工单列表失败: ${res.status}`));
-  const data = await res.json();
-  // 后端返回 PaginatedWorkOrderSummary { items, total, offset, limit }
-  return data.items ?? [];
+  return res.json();
 }
 
 export async function fetchWorkOrder(id: string): Promise<WorkOrderData> {
@@ -281,4 +337,20 @@ export async function confirmSyncNotCreated(id: string): Promise<void> {
 export async function retrySync(id: string): Promise<void> {
   const res = await authFetch(`/api/admin/sync-failures/${id}/retry`, { method: 'POST' });
   if (!res.ok) throw new Error(await extractErrorDetail(res, `同步重试失败: ${res.status}`));
+}
+
+export interface SyncFailure {
+  id: string;
+  ticket_id: number;
+  sync_attempts: number;
+  sync_last_error: string | null;
+  sync_status: 'failed' | 'uncertain';
+  sync_external_id: string | null;
+  reviewed_at: string | null;
+}
+
+export async function fetchSyncFailures(): Promise<SyncFailure[]> {
+  const res = await authFetch('/api/admin/sync-failures');
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `获取同步失败列表失败: ${res.status}`));
+  return res.json();
 }

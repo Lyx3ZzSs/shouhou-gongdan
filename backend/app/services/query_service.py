@@ -1,5 +1,7 @@
 """只读查询服务 — JOIN workorder_review + ticket_view 获取完整工单数据。"""
 
+from datetime import date, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import String, select, func
 from fastapi import HTTPException
@@ -36,12 +38,23 @@ class WorkOrderQueryService:
         self,
         status: str | None = None,
         keyword: str | None = None,
+        created_from: date | None = None,
+        created_to: date | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> PaginatedWorkOrderSummary:
         """返回分页工单摘要列表（JOIN ticket_view，LEFT JOIN 防孤儿记录）。"""
         # 使用 status 参数作为 review_status
         review_status = status
+        status_condition = (
+            WorkOrderReview.review_status.in_(("confirmed", "returned"))
+            if review_status == "reviewed"
+            else WorkOrderReview.review_status == review_status
+            if review_status
+            else None
+        )
+
+        created_at = func.coalesce(TicketView.source_created_at, WorkOrderReview.created_at)
 
         # Build the query with LEFT JOIN to ticket_view
         base_query = (
@@ -50,7 +63,7 @@ class WorkOrderQueryService:
                 WorkOrderReview.ticket_id,
                 WorkOrderReview.review_status,
                 WorkOrderReview.reject_count,
-                func.coalesce(TicketView.source_created_at, WorkOrderReview.created_at).label("created_at"),
+                created_at.label("created_at"),
                 TicketView.name,
                 TicketView.caseDescription,
                 TicketView.caseAccountId,
@@ -66,8 +79,8 @@ class WorkOrderQueryService:
         )
 
         # Apply filters
-        if review_status:
-            base_query = base_query.where(WorkOrderReview.review_status == review_status)
+        if status_condition is not None:
+            base_query = base_query.where(status_condition)
         if keyword:
             sanitized = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             kw = f"%{sanitized}%"
@@ -77,6 +90,10 @@ class WorkOrderQueryService:
                 (TicketView.caseAccountId.ilike(kw, escape='\\')) |
                 (TicketView.projectName__c.ilike(kw, escape='\\'))
             )
+        if created_from:
+            base_query = base_query.where(created_at >= created_from)
+        if created_to:
+            base_query = base_query.where(created_at < created_to + timedelta(days=1))
 
         # Count total
         count_query = (
@@ -84,8 +101,8 @@ class WorkOrderQueryService:
             .select_from(WorkOrderReview)
             .outerjoin(TicketView, WorkOrderReview.ticket_id == TicketView.id)
         )
-        if review_status:
-            count_query = count_query.where(WorkOrderReview.review_status == review_status)
+        if status_condition is not None:
+            count_query = count_query.where(status_condition)
         if keyword:
             count_query = count_query.where(
                 (WorkOrderReview.ticket_id.cast(String).ilike(kw, escape='\\')) |
@@ -93,13 +110,17 @@ class WorkOrderQueryService:
                 (TicketView.caseAccountId.ilike(kw, escape='\\')) |
                 (TicketView.projectName__c.ilike(kw, escape='\\'))
             )
+        if created_from:
+            count_query = count_query.where(created_at >= created_from)
+        if created_to:
+            count_query = count_query.where(created_at < created_to + timedelta(days=1))
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
         # Fetch page
         result = await self.db.execute(
             base_query
-            .order_by(WorkOrderReview.created_at.desc())
+            .order_by(created_at.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -113,7 +134,10 @@ class WorkOrderQueryService:
                 name=row["name"],
                 review_status=row["review_status"],
                 caseAccountId=row["caseAccountId"],
+                projectName__c=row["projectName__c"],
                 bigCustShortName__c=row["bigCustShortName__c"],
+                caseDescription=row["caseDescription"],
+                caseSource=row["caseSource"],
                 created_at=row["created_at"],
             ))
 
@@ -161,6 +185,8 @@ class WorkOrderQueryService:
             "sync_last_error": review.sync_last_error,
             "review_started_at": review.review_started_at.isoformat() if review.review_started_at else None,
             "review_duration_seconds": review.review_duration_seconds,
+            "reviewed_at": review.reviewed_at.isoformat() if review.reviewed_at else None,
+            "reviewed_by": review.reviewed_by,
         }
 
         # Merge ticket_view business fields

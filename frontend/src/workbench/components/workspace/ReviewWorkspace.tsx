@@ -1,8 +1,7 @@
 import { Inbox, UserCog, X, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TicketReviewHeader } from './TicketReviewHeader';
-import { ReviewToolbar } from './ReviewToolbar';
-import { FieldCards } from './FieldCards';
+import { KeyFieldReview } from './KeyFieldReview';
 import { useReviewStore } from '../../store/useReviewStore';
 import { useReviewLock } from '../../hooks/useReviewLock';
 
@@ -80,7 +79,7 @@ export function ReviewWorkspace() {
 
   if (error) {
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-center bg-gradient-to-b from-app via-background to-app">
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-app">
         <ErrorState message={error} />
       </div>
     );
@@ -88,7 +87,7 @@ export function ReviewWorkspace() {
 
   if (ticketLoading) {
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-center bg-gradient-to-b from-app via-background to-app">
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-app">
         <LoadingState />
       </div>
     );
@@ -96,19 +95,18 @@ export function ReviewWorkspace() {
 
   if (!ticket) {
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-center bg-gradient-to-b from-app via-background to-app">
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-app">
         <EmptyState />
       </div>
     );
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-gradient-to-b from-app/50 via-background to-app/50">
+    <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-app">
       <BeingEditedBanner />
       <TicketReviewHeader />
-      <ReviewToolbar />
       <div className="flex-1 overflow-y-auto">
-        <FieldCards />
+        <KeyFieldReview />
       </div>
     </main>
   );

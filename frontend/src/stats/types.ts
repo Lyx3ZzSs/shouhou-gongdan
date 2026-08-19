@@ -8,6 +8,10 @@ export interface StatsOverview {
   /** 累计被驳回过（含返工后通过）的工单数 */
   total_rejected: number;
   pending_count: number;
+  stashed_count: number;
+  sync_failure_count: number;
+  rejection_rate: number | null;
+  ai_field_modification_rate: number | null;
 }
 
 export interface ReviewerStat {

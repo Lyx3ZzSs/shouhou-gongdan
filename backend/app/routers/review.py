@@ -1,8 +1,9 @@
 import uuid
+from datetime import date, datetime, timezone
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update as sa_update, func
+from sqlalchemy import select, update as sa_update, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.auth.dependencies import require_admin, require_any_role
 from app.auth.schemas import CurrentUser
@@ -14,7 +15,7 @@ from app.schemas.review import (
     ConfirmRequest, ConfirmResponse,
     WorkOrderResponse, AuditLogEntry,
     StashRequest, StashResponse, StashData,
-    PaginatedWorkOrderSummary,
+    PaginatedWorkOrderSummary, NextWorkOrderResponse,
 )
 from app.services.review_service import ReviewService, background_sync_to_xiaoshouyi
 from app.services.query_service import WorkOrderQueryService
@@ -29,6 +30,8 @@ router = APIRouter(prefix="/api/workorders", tags=["review"])
 async def list_workorders(
     status: str | None = None,
     keyword: str | None = None,
+    created_from: date | None = None,
+    created_to: date | None = None,
     offset: int = 0,
     limit: int = 50,
     current_user: CurrentUser = Depends(require_any_role),
@@ -36,13 +39,157 @@ async def list_workorders(
 ):
     """工单列表（分页 + 搜索）。
 
-    - status: 按工单状态筛选（pending_review / confirmed / stashed）
+    - status: 按工单状态筛选（pending_review / confirmed / stashed / reviewed）
     - keyword: 按序列号/站点/客户/项目名模糊搜索
+    - created_from/created_to: 按创建日期范围筛选（包含起止日期）
     - offset/limit: 分页参数（默认每页 50 条）
     """
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=422, detail="开始日期不能晚于结束日期")
+    await import_workorders(db)
     return await WorkOrderQueryService(db).list_summaries(
-        status=status, keyword=keyword, offset=offset, limit=limit,
+        status=status, keyword=keyword, created_from=created_from, created_to=created_to,
+        offset=offset, limit=limit,
     )
+
+
+@router.get("/lookups/stations")
+async def lookup_stations(
+    keyword: str = Query(default="", max_length=100),
+    current_user: CurrentUser = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    pattern = f"%{keyword.strip()}%"
+    rows = (await db.execute(text("""
+        SELECT case_account_id, station_name, project_name
+        FROM (
+            SELECT DISTINCT ON (case_account_id) case_account_id, station_name, project_name
+            FROM (
+                SELECT "caseAccountId" AS case_account_id, station_name,
+                       "projectName_c" AS project_name
+                FROM project_info
+                UNION ALL
+                SELECT case_account_id, station_name, project_name
+                FROM user_ledger
+            ) candidates
+            WHERE case_account_id IS NOT NULL
+              AND (:keyword = '' OR case_account_id ILIKE :pattern
+                   OR station_name ILIKE :pattern OR project_name ILIKE :pattern)
+            ORDER BY case_account_id, station_name NULLS LAST, project_name NULLS LAST
+        ) stations
+        ORDER BY station_name NULLS LAST
+        LIMIT 30
+    """), {"keyword": keyword.strip(), "pattern": pattern})).mappings().all()
+    return [dict(row) for row in rows]
+
+
+@router.get("/lookups/employees")
+async def lookup_employees(
+    keyword: str = Query(default="", max_length=100),
+    current_user: CurrentUser = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    pattern = f"%{keyword.strip()}%"
+    rows = (await db.execute(text("""
+        SELECT job_number, name, dept_name
+        FROM beisen_employee_cache
+        WHERE status = 1 AND job_number IS NOT NULL
+          AND (:keyword = '' OR job_number ILIKE :pattern
+               OR name ILIKE :pattern OR dept_name ILIKE :pattern)
+        ORDER BY name
+        LIMIT 30
+    """), {"keyword": keyword.strip(), "pattern": pattern})).mappings().all()
+    return [dict(row) for row in rows]
+
+
+@router.get("/{workorder_id}/context")
+async def get_review_context(
+    workorder_id: str,
+    current_user: CurrentUser = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    ticket = (await db.execute(text("""
+        SELECT t.id, t.session_id, t.source_id
+        FROM workorder_review wr JOIN ticket t ON t.id = wr.ticket_id
+        WHERE wr.id = :id
+    """), {"id": workorder_id})).mappings().first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    conversation: list[dict] = []
+    if ticket["session_id"] is not None:
+        session = (await db.execute(text("""
+            SELECT customer_msgs, service_msgs FROM wechat_session WHERE id = :id
+        """), {"id": ticket["session_id"]})).mappings().first()
+        if session:
+            conversation.extend({"role": "客户", "content": str(item)} for item in (session["customer_msgs"] or []))
+            conversation.extend({"role": "客服", "content": str(item)} for item in (session["service_msgs"] or []))
+    if not conversation and ticket["source_id"] is not None:
+        content = (await db.execute(
+            text("SELECT content FROM source_message WHERE id = :id"),
+            {"id": ticket["source_id"]},
+        )).scalar_one_or_none()
+        if content:
+            conversation.append({"role": "客户", "content": content})
+
+    attachments = (await db.execute(text("""
+        SELECT file_name, file_path FROM ticket_attachment
+        WHERE ticket_id = :ticket_id
+           OR (ticket_id IS NULL AND session_id = :session_id)
+           OR (ticket_id IS NULL AND source_id = :source_id)
+        ORDER BY id
+    """), {
+        "ticket_id": ticket["id"],
+        "session_id": ticket["session_id"],
+        "source_id": ticket["source_id"],
+    })).mappings().all()
+    ledger = (await db.execute(text("""
+        SELECT ul.station_name, ul.case_account_id, ul.project_name,
+               ul.name, ul.phone, ul.province, ul."bigCustShortName__c" AS customer_name
+        FROM ticket t
+        JOIN wechat_session ws ON ws.id = t.session_id
+        JOIN user_ledger ul ON ul.user_id = ws.customer_id
+        WHERE t.id = :ticket_id LIMIT 1
+    """), {"ticket_id": ticket["id"]})).mappings().first()
+    return {
+        "conversation": conversation,
+        "attachments": [dict(row) for row in attachments],
+        "ledger": dict(ledger) if ledger else None,
+    }
+
+
+@router.post("/next", response_model=NextWorkOrderResponse)
+async def take_next_workorder(
+    current_user: CurrentUser = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    """按创建时间领取首张未被他人锁定的待审核工单。"""
+    rows = (await db.execute(
+        select(WorkOrderReview)
+        .where(WorkOrderReview.review_status == "pending_review")
+        .order_by(WorkOrderReview.created_at.asc(), WorkOrderReview.id.asc())
+        .limit(100)
+    )).scalars().all()
+    lock_service = get_lock_service()
+    for row in rows:
+        lock = await lock_service.acquire(
+            row.id,
+            current_user.user_id,
+            current_user.display_name,
+            row.lock_fencing_token,
+        )
+        if not lock.get("locked"):
+            continue
+        try:
+            row.review_started_at = row.review_started_at or datetime.now(timezone.utc)
+            row.lock_fencing_token = lock["fencing_token"]
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            await lock_service.release(row.id, current_user.user_id, lock["fencing_token"])
+            raise
+        return NextWorkOrderResponse(workorder_id=row.id)
+    return NextWorkOrderResponse()
 
 
 @router.get("/{workorder_id}", response_model=WorkOrderResponse)
@@ -182,7 +329,12 @@ async def stash_workorder(
                 sa_update(WorkOrderReview)
                 .where(WorkOrderReview.id == workorder_id)
                 .where(WorkOrderReview.review_status.in_(['pending_review', 'reviewing', 'stashed']))
-                .values(review_status='stashed')
+                .values(
+                    review_status='stashed',
+                    review_duration_seconds=func.coalesce(WorkOrderReview.review_duration_seconds, 0)
+                    + func.coalesce(func.extract('epoch', func.now() - WorkOrderReview.review_started_at), 0),
+                    review_started_at=None,
+                )
             )
             if status_result.rowcount == 0:
                 raise HTTPException(status_code=409, detail="当前工单状态不允许暂存")
@@ -262,7 +414,7 @@ async def get_audit_logs(
                 "changes": [],
             }
         sessions[sid]["changes"].append({
-            "op": row.change_type,
+            "op": "replace" if row.change_type == "rejected" else row.change_type,
             "path": row.field_path,
             "field_label": row.field_label,
             "old_value": row.old_value,
@@ -275,6 +427,30 @@ async def get_audit_logs(
 # ---- Admin endpoints for sync management ----
 
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def add_sync_audit(
+    db: AsyncSession,
+    workorder_id: str,
+    current_user: CurrentUser,
+    label: str,
+    old_value: str | None,
+    new_value: str | None,
+    session_id: str | None = None,
+) -> str:
+    session_id = session_id or f"sync-{uuid.uuid4().hex}"
+    db.add(WorkOrderAuditLog(
+        workorder_id=workorder_id,
+        session_id=session_id,
+        field_path="/sync_status",
+        field_label=label,
+        old_value=old_value,
+        new_value=new_value,
+        change_type="replace",
+        operator_id=current_user.user_id,
+        operator_name=current_user.display_name,
+    ))
+    return session_id
 
 
 @admin_router.post("/import")
@@ -347,6 +523,7 @@ async def retry_sync(
             .where(WorkOrderReview.id == workorder_id)
             .values(sync_status='synced'),
         )
+        add_sync_audit(db, workorder_id, current_user, "同步状态（已有外部单号）", wo.sync_status, "synced")
         await db.commit()
         return {"status": "synced", "workorder_id": workorder_id, "note": "已有 external_id，已标记为 synced"}
 
@@ -361,6 +538,7 @@ async def retry_sync(
             .where(WorkOrderReview.sync_status == 'failed')
             .values(sync_status='pending', sync_last_error=None, sync_started_at=None),
         )
+        add_sync_audit(db, workorder_id, current_user, "同步状态（人工重试）", "failed", "pending")
         await db.commit()
 
     # 后台重试
@@ -407,6 +585,18 @@ async def reconcile_uncertain_sync(
         if check.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="工单不存在")
         raise HTTPException(status_code=409, detail="只有结果待核实且尚未绑定外部单号的工单可以对账")
+    session_id = add_sync_audit(db, workorder_id, current_user, "同步状态（人工对账）", "uncertain", "synced")
+    db.add(WorkOrderAuditLog(
+        workorder_id=workorder_id,
+        session_id=session_id,
+        field_path="/sync_external_id",
+        field_label="销售易工单号（人工对账）",
+        old_value=None,
+        new_value=external_id,
+        change_type="replace",
+        operator_id=current_user.user_id,
+        operator_name=current_user.display_name,
+    ))
     await db.commit()
     return {
         "status": "synced",
@@ -442,5 +632,6 @@ async def confirm_uncertain_not_created(
         if check.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="工单不存在")
         raise HTTPException(status_code=409, detail="只有结果待核实且未绑定外部单号的工单可以确认未创建")
+    add_sync_audit(db, workorder_id, current_user, "同步状态（确认未创建）", "uncertain", "failed")
     await db.commit()
     return {"status": "failed", "workorder_id": workorder_id, "ticket_id": ticket_id}

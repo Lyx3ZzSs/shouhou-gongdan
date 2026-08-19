@@ -7,6 +7,7 @@ def valid_workorder(**overrides):
         "ownerId": "u1", "dimDepart": "d1", "name": "华北场站功率预测异常",
         "caseStatus": "1", "caseSource": "1", "feedbackChannel__c": "1",
         "workOrderStatus__c": "1", "caseDescription": "场站功率预测连续偏差，需排查气象数据。",
+        "caseAccountId": "SPCZ202408210132", "projectName__c": "华北场站项目",
         "problemResponsible__c": "engineer-1", "problemDept__c": "技术支持部",
         "problemLevel__c": "1", "problemType1__c": "2", "problemType2__c": "17",
         "problemType3__c": "47", "needCallBack__c": "2", "needOnSite__c": "2",
@@ -64,6 +65,12 @@ def test_invalid_datetime_blocks():
     result = validate_workorder(valid_workorder(requireSolveTime__c="not-a-date"))
     assert not result.valid
     assert any(i.code == "INVALID_DATETIME" for i in result.issues)
+
+
+def test_optional_contact_must_be_11_digits_when_present():
+    assert validate_workorder(valid_workorder(feedbackUserContact__c="")).valid
+    result = validate_workorder(valid_workorder(feedbackUserContact__c="123"))
+    assert any(i.code == "INVALID_CONTACT_PHONE" for i in result.issues)
 
 
 def test_high_risk_category_warns_without_keyword():

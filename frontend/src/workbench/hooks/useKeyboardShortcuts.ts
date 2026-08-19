@@ -22,7 +22,7 @@ export function useKeyboardShortcuts() {
       // Cmd/Ctrl + S 暂存
       if (mod && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        st.stash();
+        void st.saveDraft();
         return;
       }
 

@@ -65,6 +65,13 @@ def validate_workorder(data: dict[str, Any]) -> ValidationResult:
                     field=field.key, message=f"{field.name}不是有效选项",
                 ))
 
+    contact = str(data.get("feedbackUserContact__c") or "").strip()
+    if contact and (len(contact) != 11 or not contact.isdigit()):
+        issues.append(ValidationIssue(
+            code="INVALID_CONTACT_PHONE", severity="blocking",
+            field="feedbackUserContact__c", message="反馈人联系方式须为 11 位手机号",
+        ))
+
     if not _blank(data.get("problemType2__c")) and _blank(data.get("problemType1__c")):
         issues.append(ValidationIssue(
             code="CATEGORY_PARENT_MISSING", severity="blocking",

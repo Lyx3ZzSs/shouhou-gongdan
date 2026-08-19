@@ -45,6 +45,8 @@ export interface WorkOrderData {
   sync_last_error: string | null;
   review_started_at: string | null;
   review_duration_seconds: number | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
   updated_at: string | null;
   ai_confidence?: number | null;
 

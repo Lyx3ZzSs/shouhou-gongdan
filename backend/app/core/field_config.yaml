@@ -473,6 +473,7 @@ fields:
     name: 项目名称
     group: project
     type: text
+    required: true
     is_key: true
     ui_visible: true
   - key: projectProvince__c
@@ -484,6 +485,7 @@ fields:
     name: 场站编号
     group: project
     type: text
+    required: true
     ui_visible: true
   - key: stationName
     name: 场站名称
@@ -529,7 +531,6 @@ fields:
     name: 工单描述
     group: description
     type: textarea
-    required: true
     is_key: true
     ui_visible: true
   - key: remark__c
@@ -624,6 +625,7 @@ fields:
     name: 问题责任部门
     group: handling
     type: text
+    required: true
     ui_visible: true
   - key: isHandled__c
     name: 是否处理

@@ -166,7 +166,7 @@
           "review"
         ],
         "summary": "List Workorders",
-        "description": "工单列表（分页 + 搜索）。\n\n- status: 按工单状态筛选（pending_review / confirmed / stashed）\n- keyword: 按序列号/站点/客户/项目名模糊搜索\n- offset/limit: 分页参数（默认每页 50 条）",
+        "description": "工单列表（分页 + 搜索）。\n\n- status: 按工单状态筛选（pending_review / confirmed / stashed）\n- keyword: 按序列号/站点/客户/项目名模糊搜索\n- created_from/created_to: 按创建日期范围筛选（包含起止日期）\n- offset/limit: 分页参数（默认每页 50 条）",
         "operationId": "list_workorders_api_workorders_get",
         "security": [
           {
@@ -204,6 +204,40 @@
                 }
               ],
               "title": "Keyword"
+            }
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "name": "created_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
             }
           },
           {
@@ -1977,6 +2011,28 @@
             ],
             "title": "Review Duration Seconds"
           },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
           "ownerId": {
             "anyOf": [
               {
@@ -2426,6 +2482,17 @@
             ],
             "title": "Caseaccountid"
           },
+          "projectName__c": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectname  C"
+          },
           "bigCustShortName__c": {
             "anyOf": [
               {
@@ -2436,6 +2503,28 @@
               }
             ],
             "title": "Bigcustshortname  C"
+          },
+          "caseDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casedescription"
+          },
+          "caseSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Casesource"
           },
           "created_at": {
             "anyOf": [

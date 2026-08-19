@@ -27,6 +27,10 @@ export function useReviewLock(workorderId: string | undefined) {
   // 获取锁
   useEffect(() => {
     if (!workorderId) return;
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_DATA === 'true') {
+      useReviewStore.setState({ lockState: 'locked', lockFencingToken: 1 });
+      return;
+    }
 
     let cancelled = false;
     useReviewStore.setState({ lockState: 'acquiring' });
@@ -101,6 +105,7 @@ export function useReviewLock(workorderId: string | undefined) {
   // 页面关闭时释放锁（keepalive 确保请求发送）
   useEffect(() => {
     if (!workorderId) return;
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_DATA === 'true') return;
 
     const handleBeforeUnload = () => {
       const token = useReviewStore.getState().lockFencingToken;

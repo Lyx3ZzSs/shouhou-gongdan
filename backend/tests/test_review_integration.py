@@ -5,6 +5,7 @@
 """
 
 from pathlib import Path
+import os
 from unittest.mock import AsyncMock
 
 import asyncpg
@@ -18,22 +19,31 @@ from app.services.review_service import ReviewService
 from app.services.import_service import import_workorders
 
 TEST_DB_NAME = "shouhou_gongdan_test"
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", settings.DATABASE_URL)
 
 
 def _url(database: str) -> str:
-    return make_url(settings.DATABASE_URL).set(database=database).render_as_string(
+    return make_url(TEST_DATABASE_URL).set(database=database).render_as_string(
         hide_password=False,
     )
 
 
-def _asyncpg_url(database: str) -> str:
-    return _url(database).replace("postgresql+asyncpg://", "postgresql://")
+async def _connect(database: str):
+    url = make_url(TEST_DATABASE_URL)
+    return await asyncpg.connect(
+        host=url.host or "localhost",
+        port=url.port or 5432,
+        user=url.username,
+        password=url.password,
+        database=database,
+        timeout=5,
+    )
 
 
 @pytest.fixture
 async def engine():
     try:
-        admin = await asyncpg.connect(_asyncpg_url("postgres"), timeout=5)
+        admin = await _connect("postgres")
     except Exception as exc:
         pytest.skip(f"PostgreSQL is not available — skipping integration tests: {exc}")
     try:
@@ -44,7 +54,7 @@ async def engine():
     finally:
         await admin.close()
 
-    conn = await asyncpg.connect(_asyncpg_url(TEST_DB_NAME))
+    conn = await _connect(TEST_DB_NAME)
     try:
         await conn.execute(Path("../schema_init.sql").read_text(encoding="utf-8"))
     finally:
@@ -53,7 +63,7 @@ async def engine():
     value = create_async_engine(_url(TEST_DB_NAME), echo=False)
     yield value
     await value.dispose()
-    admin = await asyncpg.connect(_asyncpg_url("postgres"))
+    admin = await _connect("postgres")
     try:
         await admin.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -168,7 +178,7 @@ async def test_reject_persists_reason_without_bad_case(db):
         "SELECT review_status, reject_count, last_reject_reason "
         "FROM workorder_review WHERE id='WO-E2E-001'"
     ))).one()
-    assert tuple(row) == ("pending_review", 1, "分类信息不足，请重新补充")
+    assert tuple(row) == ("returned", 1, "分类信息不足，请重新补充")
     assert (await db.execute(text("SELECT count(*) FROM bad_case_sample"))).scalar() == 0
 
 

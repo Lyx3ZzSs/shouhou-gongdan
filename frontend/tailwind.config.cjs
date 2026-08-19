@@ -59,15 +59,12 @@ module.exports = {
       },
       fontFamily: {
         sans: [
-          '"Inter"',
           '-apple-system',
           'BlinkMacSystemFont',
           '"Segoe UI"',
           '"PingFang SC"',
           '"Microsoft YaHei"',
-          'Roboto',
-          'Helvetica',
-          'Arial',
+          'Helvetica Neue',
           'sans-serif',
         ],
         display: [

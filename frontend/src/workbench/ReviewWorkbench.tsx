@@ -1,12 +1,11 @@
-import { useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
+import type { PlatformView } from '@/components/PlatformNav';
+import { PlatformNav } from '@/components/PlatformNav';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { WorkbenchHeader } from './components/WorkbenchHeader';
-import { ReviewQueue } from './components/queue/ReviewQueue';
 import { ReviewWorkspace } from './components/workspace/ReviewWorkspace';
-import { ReviewSidebar } from './components/sidebar/ReviewSidebar';
 import { StickyDecisionBar } from './components/StickyDecisionBar';
 import { ReviewSubmitDialog } from './components/ReviewSubmitDialog';
 import { VersionConflictDialog } from './components/VersionConflictDialog';
@@ -17,120 +16,67 @@ import { useReviewStore } from './store/useReviewStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAutoSave } from './hooks/useAutoSave';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { cinematicEnter } from '@/lib/animations';
-import { cn } from '@/lib/utils';
-
-/** 左侧栏收起后的窄轨道 */
-function LeftRail() {
-  const toggleLeft = useReviewStore((s) => s.toggleLeft);
-  return (
-    <div className="flex w-12 shrink-0 flex-col items-center border-r border-border/40 bg-background/70 backdrop-blur-xl pt-3 max-lg:hidden">
-      <Button variant="ghost" size="icon" onClick={toggleLeft} aria-label="展开待审核队列" className="rounded-xl hover:bg-primary/10">
-        <PanelLeft className="h-4 w-4" />
-      </Button>
-      <span className="mt-2 text-[10px] text-muted-foreground tracking-[0.2em] [writing-mode:vertical-rl]">
-        待审核队列
-      </span>
-    </div>
-  );
+interface Props {
+  onNavigate: (view: PlatformView) => void;
+  initialTicketId?: string | null;
+  drawer?: boolean;
+  onClose?: () => void;
 }
 
-/** 右侧栏收起后的窄轨道 */
-function RightRail() {
-  const toggleRight = useReviewStore((s) => s.toggleRight);
-  return (
-    <div className="flex w-12 shrink-0 flex-col items-center border-l border-border/40 bg-background/70 backdrop-blur-xl pt-3 max-lg:hidden">
-      <Button variant="ghost" size="icon" onClick={toggleRight} aria-label="展开审核控制台" className="rounded-xl hover:bg-primary/10">
-        <PanelRight className="h-4 w-4" />
-      </Button>
-      <span className="mt-2 text-[10px] text-muted-foreground tracking-[0.2em] [writing-mode:vertical-rl]">
-        审核控制台
-      </span>
-    </div>
-  );
-}
-
-interface Props { onNavigateStats: () => void }
-
-export default function ReviewWorkbench({ onNavigateStats }: Props) {
+export default function ReviewWorkbench({ onNavigate, initialTicketId, drawer = false, onClose }: Props) {
   const init = useReviewStore((s) => s.init);
-  const leftCollapsed = useReviewStore((s) => s.leftCollapsed);
-  const rightCollapsed = useReviewStore((s) => s.rightCollapsed);
-  const toggleLeft = useReviewStore((s) => s.toggleLeft);
-  const toggleRight = useReviewStore((s) => s.toggleRight);
+  const dirty = useReviewStore((s) => s.dirty);
+  const stash = useReviewStore((s) => s.stash);
+  const discardDraft = useReviewStore((s) => s.discardDraft);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
   useKeyboardShortcuts();
   useAutoSave();
 
   useEffect(() => {
-    init();
-  }, [init]);
+    void (async () => {
+      await init(initialTicketId ?? undefined);
+    })();
+  }, [init, initialTicketId]);
+
+  const requestClose = () => {
+    if (!onClose) return;
+    if (dirty) setCloseConfirmOpen(true);
+    else onClose();
+  };
+
+  const finishClose = async (action: () => Promise<void>) => {
+    await action();
+    setCloseConfirmOpen(false);
+    onClose?.();
+  };
 
   return (
     <TooltipProvider delayDuration={200}>
-      <motion.div
-        className="flex h-screen flex-col overflow-hidden bg-transparent text-foreground"
-        variants={cinematicEnter}
-        initial="hidden"
-        animate="visible"
+      {drawer && <div className="fixed inset-0 z-40 bg-slate-950/10 lg:left-[220px]" aria-hidden="true" />}
+      <div
+        role={drawer ? 'dialog' : undefined}
+        aria-modal={drawer ? true : undefined}
+        aria-label={drawer ? '工单审核' : undefined}
+        className={drawer
+          ? 'fixed inset-y-0 right-0 z-50 flex w-full flex-col overflow-hidden border-l border-border bg-background text-foreground shadow-2xl lg:w-[72vw] lg:min-w-[840px] xl:max-w-[1180px]'
+          : 'flex h-screen overflow-hidden bg-app text-foreground'}
       >
-        <WorkbenchHeader onNavigateStats={onNavigateStats} />
-        <div className="flex min-h-0 flex-1 relative">
-          {/* 左侧队列 — 桌面端内联，移动端覆盖层 */}
-          <div
-            className={cn(
-              'z-30',
-              'max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-30 max-lg:shadow-xl max-lg:transition-transform max-lg:duration-200',
-              leftCollapsed && 'max-lg:-translate-x-full',
-            )}
-          >
-            {leftCollapsed ? <LeftRail /> : (
-              <ErrorBoundary panelName="待审核队列" className="h-full">
-                <ReviewQueue />
-              </ErrorBoundary>
-            )}
-          </div>
-
-          {/* 移动端：队列展开时的遮罩 */}
-          {!leftCollapsed && (
-            <div
-              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/20 max-lg:backdrop-blur-sm"
-              onClick={toggleLeft}
-              aria-hidden
-            />
+        {!drawer && <PlatformNav active="workbench" onNavigate={onNavigate} />}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {drawer && (
+            <div className="flex h-12 shrink-0 items-center border-b border-border px-5">
+              <span className="text-sm font-semibold">工单审核</span>
+              <Button variant="ghost" size="icon-sm" className="ml-auto" onClick={requestClose} aria-label="关闭审核抽屉">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           )}
-
-          <ErrorBoundary panelName="工单编辑区" className="min-h-0 flex-1">
-            <ReviewWorkspace />
-          </ErrorBoundary>
-
-          {/* 右侧控制台 — 桌面端内联，移动端覆盖层 */}
-          <div
-            className={cn(
-              'z-30',
-              'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:shadow-xl max-lg:transition-transform max-lg:duration-200',
-              rightCollapsed && 'max-lg:translate-x-full',
-            )}
-          >
-            {rightCollapsed ? <RightRail /> : (
-              <ErrorBoundary panelName="审核控制台" className="h-full">
-                <ReviewSidebar />
-              </ErrorBoundary>
-            )}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ErrorBoundary panelName="工单编辑区" className="h-full"><ReviewWorkspace /></ErrorBoundary>
           </div>
-
-          {/* 移动端：侧栏展开时的遮罩 */}
-          {!rightCollapsed && (
-            <div
-              className="lg:hidden max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:bg-black/20 max-lg:backdrop-blur-sm"
-              onClick={toggleRight}
-              aria-hidden
-            />
-          )}
+          <ErrorBoundary panelName="审核操作栏"><StickyDecisionBar /></ErrorBoundary>
         </div>
-        <ErrorBoundary panelName="审核操作栏">
-          <StickyDecisionBar />
-        </ErrorBoundary>
 
         {/* 弹窗与提示 */}
         <ReviewSubmitDialog />
@@ -138,7 +84,23 @@ export default function ReviewWorkbench({ onNavigateStats }: Props) {
         <UnsavedSwitchDialog />
         <SubmittedToast />
         <ErrorNoticeToast />
-      </motion.div>
+
+        <Dialog open={closeConfirmOpen} onOpenChange={setCloseConfirmOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-warning" />当前工单有未提交修改</DialogTitle>
+              <DialogDescription>关闭审核前，请选择保留草稿并稍后处理，或放弃本次修改。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="sm:justify-between">
+              <Button variant="ghost" onClick={() => setCloseConfirmOpen(false)}>取消</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => void finishClose(discardDraft)}>放弃修改</Button>
+                <Button onClick={() => void finishClose(stash)}>暂存并跳过</Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </TooltipProvider>
   );
 }

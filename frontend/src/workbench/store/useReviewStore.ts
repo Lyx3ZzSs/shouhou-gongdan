@@ -24,8 +24,10 @@ import {
 import { valuesEqual } from '../lib/format';
 import { getCurrentUserName } from '../../auth/parseUser';
 import { CONFLICT_DEMO } from '../mock/mockData';
+import { QUEUE as MOCK_QUEUE, buildTicket } from '../mock/mockData';
 import {
   fetchWorkOrderList,
+  fetchNextWorkOrder,
   fetchWorkOrder,
   fetchAuditLogs,
   fetchConfirm,
@@ -44,6 +46,7 @@ import {
 } from '../lib/converters';
 
 let _uid = 0;
+const USE_MOCK_DATA = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_DATA === 'true';
 const submitKeys = new Map<string, string>();
 function uid(prefix = 'id'): string {
   _uid += 1;
@@ -101,7 +104,7 @@ function buildInitialChangeLog(_ticket: ReviewTicket): ChangeRecord[] {
   return [];
 }
 
-function defaultExpandedGroups(ticket: ReviewTicket): Record<string, boolean> {
+export function computeDefaultExpandedGroups(ticket: ReviewTicket): Record<string, boolean> {
   const fieldGroup = new Map(ticket.fields.map((f) => [f.id, f.group] as const));
   const anomalyGroupIds = new Set<string>();
   for (const a of ticket.anomalies) {
@@ -112,7 +115,11 @@ function defaultExpandedGroups(ticket: ReviewTicket): Record<string, boolean> {
   }
   const expanded: Record<string, boolean> = {};
   for (const f of ticket.fields) {
-    if (expanded[f.group] === undefined) expanded[f.group] = anomalyGroupIds.has(f.group);
+    if (expanded[f.group] === undefined) {
+      expanded[f.group] = anomalyGroupIds.size > 0
+        ? anomalyGroupIds.has(f.group)
+        : f.group === 'basic';
+    }
   }
   return expanded;
 }
@@ -186,7 +193,7 @@ interface ReviewStore {
   locatingTick: number;
 
   // actions
-  init: () => Promise<void>;
+  init: (preferredId?: string) => Promise<void>;
   setFilters: (patch: Partial<QueueFilters>) => void;
   applySavedView: (view: SavedView) => void;
   selectTicket: (id: string) => void;
@@ -197,6 +204,7 @@ interface ReviewStore {
   nextTicket: () => void;
 
   setFieldValue: (fieldId: string, value: unknown, reason: string) => void;
+  confirmField: (fieldId: string) => void;
   resetField: (fieldId: string) => void;
   undoChange: (fieldId: string) => void;
   useSuggestion: (fieldId: string) => void;
@@ -207,6 +215,8 @@ interface ReviewStore {
   appendNotePhrase: (phrase: string) => void;
 
   stash: () => Promise<void>;
+  saveDraft: () => Promise<void>;
+  discardDraft: () => Promise<void>;
   openSubmitDialog: (decision: ReviewDecision) => void;
   closeSubmitDialog: () => void;
   submit: (decision: ReviewDecision, openNext: boolean) => Promise<void>;
@@ -275,15 +285,16 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   queueEmpty: false,
 
   density: 'standard',
-  leftCollapsed: true,
-  rightCollapsed: true,
-  fieldFilter: 'all',
+  leftCollapsed: typeof window === 'undefined' || window.innerWidth < 1024,
+  rightCollapsed: typeof window === 'undefined' || window.innerWidth < 1440,
+  fieldFilter: 'abnormal',
   expandedGroups: {},
   editingFieldId: null,
   locatingFieldId: null,
   locatingTick: 0,
 
-  init: async () => {
+  init: async (preferredId) => {
+    if (get().queueLoading) return;
     set({ queueLoading: true, error: null });
     try {
       // 生成审核会话 ID（幂等性标识）
@@ -292,9 +303,19 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       const status = get().filters.status;
-      const summaries = await fetchWorkOrderList(status === 'all' ? undefined : status);
-      const queue: QueueItem[] = summaries.map(workOrderSummaryToQueueItem);
-      const first = queue.find((i) => matchFilters(i, get().filters));
+      const queue: QueueItem[] = USE_MOCK_DATA
+        ? MOCK_QUEUE.filter((item) => status === 'all' || item.status === status)
+        : (await fetchWorkOrderList(status === 'all' ? undefined : status)).map(workOrderSummaryToQueueItem);
+      const eligible = queue.filter((item) => matchFilters(item, get().filters));
+      let first: { id: string } | undefined;
+      if (preferredId) {
+        first = queue.find((item) => item.id === preferredId) ?? { id: preferredId };
+      } else if (!USE_MOCK_DATA && status === 'pending_review' && eligible.length > 0) {
+        const nextId = await fetchNextWorkOrder();
+        first = nextId ? eligible.find((item) => item.id === nextId) ?? { id: nextId } : undefined;
+      } else {
+        first = eligible[0];
+      }
 
       if (!first) {
         set((s) => ({
@@ -357,6 +378,23 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     const reqId = get().currentLoadId + 1;
     set({ ticketLoading: true, error: null, currentLoadId: reqId });
     try {
+      if (USE_MOCK_DATA) {
+        const item = MOCK_QUEUE.find((candidate) => candidate.id === id);
+        if (!item) throw new Error('模拟工单不存在');
+        const ticket = { ...buildTicket(item), anomalies: [] };
+        set({
+          selectedId: id,
+          ticket,
+          fieldStates: buildFieldStates(ticket),
+          changeLog: [],
+          auditLogs: ticket.auditLogs,
+          notes: '',
+          dirty: false,
+          ticketLoading: false,
+          autoSaveStatus: 'saved',
+        });
+        return;
+      }
       const [data, sessions, stashData] = await Promise.all([
         fetchWorkOrder(id),
         fetchAuditLogs(id).catch(() => []),
@@ -366,6 +404,23 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       if (reqId !== get().currentLoadId) return;
       const auditEntries = auditLogSessionsToEntries(sessions);
       const ticket = workOrderDataToReviewTicket(data, auditEntries);
+
+      set((state) => state.queue.some((item) => item.id === id) ? state : {
+        queue: [...state.queue, {
+          id,
+          serialNumber: ticket.serialNumber,
+          title: ticket.title,
+          type: ticket.type,
+          source: ticket.source,
+          status: ticket.status === 'rejected' || ticket.status === 'approved'
+            ? 'confirmed'
+            : ticket.status,
+          anomalyCount: ticket.anomalies.length,
+          slaRemainingMin: ticket.slaRemainingMin,
+          createdAt: ticket.createdAt,
+          urgency: ticket.urgency,
+        }],
+      });
 
       // 构建初始字段状态，然后用暂存数据覆盖
       const baseFieldStates = buildFieldStates(ticket);
@@ -392,8 +447,8 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
         auditLogs: ticket.auditLogs,
         notes: restoredNotes,
         dirty: false,
-        expandedGroups: defaultExpandedGroups(ticket),
-        fieldFilter: 'all',
+        expandedGroups: computeDefaultExpandedGroups(ticket),
+        fieldFilter: ticket.anomalies.length > 0 ? 'abnormal' : 'all',
         editingFieldId: null,
         locatingFieldId: null,
         autoSaveStatus: 'idle',
@@ -491,6 +546,31 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }));
   },
 
+  confirmField: (fieldId) => {
+    const { ticket, lockState, fieldStates } = get();
+    if (!ticket || lockState === 'lost' || lockState === 'error') return;
+    if (ticket.status === 'confirmed' || ticket.status === 'rejected') return;
+    const field = ticket.fields.find((f) => f.id === fieldId);
+    const prev = fieldStates[fieldId];
+    if (!field || !prev || prev.status === 'blocking_error') return;
+    const ts = new Date().toISOString();
+    set((s) => ({
+      fieldStates: {
+        ...s.fieldStates,
+        [fieldId]: { ...prev, status: 'confirmed', changedAt: ts },
+      },
+      auditLogs: [{
+        id: uid('al'),
+        timestamp: ts,
+        category: 'field_change',
+        actor: getCurrentUserName(),
+        action: `确认「${field.name}」无误`,
+      }, ...s.auditLogs],
+      dirty: true,
+      autoSaveStatus: 'saving',
+    }));
+  },
+
   resetField: (fieldId) => {
     const { ticket, fieldStates } = get();
     if (!ticket) return;
@@ -573,6 +653,21 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       return;
     }
 
+    if (USE_MOCK_DATA) {
+      const list = queue.filter((item) => matchFilters(item, filters));
+      const index = list.findIndex((item) => item.id === selectedId);
+      const nextItem = list[index + 1] ?? null;
+      set({
+        queue: queue.filter((item) => item.id !== selectedId),
+        autoSaveStatus: 'saved',
+        dirty: false,
+        submittedToast: '已进入稍后处理',
+      });
+      if (nextItem) await get().loadTicketById(nextItem.id);
+      else set({ ticket: null, queueEmpty: true });
+      return;
+    }
+
     set({ autoSaveStatus: 'saving' });
     try {
       const payload = Object.fromEntries(
@@ -627,7 +722,60 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
     }
   },
 
-  openSubmitDialog: (decision) => set({ submitDialogOpen: true, decision }),
+  saveDraft: async () => {
+    const { ticket, fieldStates, notes, lockFencingToken, lockState } = get();
+    if (!ticket || lockFencingToken === null || lockState === 'lost' || lockState === 'error') return;
+    if (USE_MOCK_DATA) {
+      set({ autoSaveStatus: 'saved', dirty: false, submittedToast: '草稿已暂存' });
+      return;
+    }
+    const payload = Object.fromEntries(
+      Object.entries(fieldStates).map(([id, fs]) => [
+        id,
+        { currentValue: fs.currentValue, status: fs.status, changeReason: fs.changeReason },
+      ]),
+    );
+    set({ autoSaveStatus: 'saving' });
+    try {
+      await stashWorkOrder(ticket.id, payload, notes, 'auto_save', lockFencingToken);
+      set({ autoSaveStatus: 'saved', dirty: false, submittedToast: '草稿已暂存' });
+    } catch {
+      set({ autoSaveStatus: 'failed', submittedToast: '暂存失败，请重试' });
+    }
+  },
+
+  discardDraft: async () => {
+    const { ticket, lockFencingToken } = get();
+    if (!ticket) return;
+    if (!USE_MOCK_DATA && lockFencingToken !== null) {
+      await deleteStashData(ticket.id, lockFencingToken);
+    }
+    set({
+      fieldStates: buildFieldStates(ticket),
+      changeLog: [],
+      notes: '',
+      dirty: false,
+      autoSaveStatus: 'idle',
+    });
+  },
+
+  openSubmitDialog: (decision) => {
+    const { ticket, fieldStates, lockState } = get();
+    if (!ticket || ticket.status === 'confirmed' || ticket.status === 'rejected') return;
+    if (lockState === 'lost' || lockState === 'error') {
+      set({ errorNotice: '编辑锁已丢失，无法提交审核' });
+      return;
+    }
+    const blocking = ticket.anomalies.find(
+      (anomaly) => anomaly.type === 'blocking_error' && !isAnomalyResolved(anomaly, fieldStates),
+    );
+    if (decision !== 'rejected' && blocking) {
+      if (blocking.fieldId) get().locateField(blocking.fieldId);
+      set({ errorNotice: '仍有阻断问题，处理后才能确认提交' });
+      return;
+    }
+    set({ submitDialogOpen: true, decision });
+  },
   closeSubmitDialog: () => set({ submitDialogOpen: false, submitting: false }),
 
   submit: async (decision, openNext) => {
@@ -649,6 +797,23 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
       return;
     }
     set({ submitting: true, error: null });
+
+    if (USE_MOCK_DATA) {
+      const list = queue.filter((item) => matchFilters(item, filters));
+      const index = list.findIndex((item) => item.id === selectedId);
+      const nextItem = list[index + 1] ?? null;
+      set({
+        queue: queue.filter((item) => item.id !== selectedId),
+        submitting: false,
+        submitDialogOpen: false,
+        dirty: false,
+        notes: '',
+        submittedToast: decision === 'rejected' ? '已驳回，进入下一条工单' : '审核通过，进入下一条工单',
+      });
+      if (openNext && nextItem) await get().loadTicketById(nextItem.id);
+      else if (!nextItem) set({ ticket: null, queueEmpty: true });
+      return;
+    }
 
     const decisionLabel: Record<ReviewDecision, string> = {
       approved: '确认通过',
@@ -880,7 +1045,20 @@ export const useReviewStore = create<ReviewStore>((set, get) => ({
   toggleGroup: (groupId) =>
     set((s) => ({ expandedGroups: { ...s.expandedGroups, [groupId]: !s.expandedGroups[groupId] } })),
   setEditingField: (fieldId) => set({ editingFieldId: fieldId }),
-  locateField: (fieldId) => set((s) => ({ locatingFieldId: fieldId, locatingTick: s.locatingTick + 1 })),
+  locateField: (fieldId) => set((s) => {
+    const group = s.ticket?.fields.find((field) => field.id === fieldId)?.group;
+    const status = s.fieldStates[fieldId]?.status;
+    const isAnomaly = s.ticket?.anomalies?.some((anomaly) => anomaly.fieldId === fieldId) ?? false;
+    const hiddenByFilter =
+      (s.fieldFilter === 'modified' && status !== 'modified') ||
+      (s.fieldFilter === 'abnormal' && !isAnomaly && status !== 'blocking_error' && status !== 'warning');
+    return {
+      fieldFilter: hiddenByFilter ? 'all' : s.fieldFilter,
+      expandedGroups: group ? { ...s.expandedGroups, [group]: true } : s.expandedGroups,
+      locatingFieldId: fieldId,
+      locatingTick: s.locatingTick + 1,
+    };
+  }),
   jumpToNextAnomaly: () => {
     const { ticket, fieldStates, locatingFieldId } = get();
     if (!ticket) return;

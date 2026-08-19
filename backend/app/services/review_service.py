@@ -534,11 +534,11 @@ class ReviewService:
                     reviewed_at = CAST(:now AS timestamp), reviewed_by = :operator_name,
                     sync_status = 'pending', sync_attempts = 0,
                     sync_last_error = NULL, review_notes = :review_notes,
-                    review_duration_seconds = CASE
-                        WHEN review_started_at IS NOT NULL
-                        THEN EXTRACT(EPOCH FROM (NOW() - review_started_at))::int
-                        ELSE NULL
-                    END
+                    review_duration_seconds = COALESCE(review_duration_seconds, 0)
+                        + CASE WHEN review_started_at IS NOT NULL
+                            THEN EXTRACT(EPOCH FROM (NOW() - review_started_at))::int
+                            ELSE 0 END,
+                    review_started_at = NULL
                 WHERE id = :id AND version = :version
                   AND lock_fencing_token = :fencing_token
                   AND review_status IN ('pending_review', 'reviewing', 'stashed')
@@ -613,7 +613,7 @@ class ReviewService:
         result = await self.db.execute(
             text("""
                 UPDATE workorder_review
-                SET review_status = 'pending_review', version = version + 1,
+                SET review_status = 'returned', version = version + 1,
                     reject_count = reject_count + 1,
                     last_reject_reason = :reason,
                     last_rejected_by = :operator_name,
@@ -621,8 +621,11 @@ class ReviewService:
                     review_notes = :review_notes,
                     sync_status = 'pending', sync_attempts = 0,
                     sync_last_error = NULL,
-                    review_started_at = NULL,
-                    review_duration_seconds = NULL
+                    review_duration_seconds = COALESCE(review_duration_seconds, 0)
+                        + CASE WHEN review_started_at IS NOT NULL
+                            THEN EXTRACT(EPOCH FROM (NOW() - review_started_at))::int
+                            ELSE 0 END,
+                    review_started_at = NULL
                 WHERE id = :id AND version = :version
                   AND lock_fencing_token = :fencing_token
                   AND review_status IN ('pending_review', 'reviewing', 'stashed')
@@ -657,7 +660,7 @@ class ReviewService:
             "status": "rejected",
             "change_count": 0,
             "bad_case_count": 0,
-            "next_review_status": "pending_review",
+            "next_review_status": "returned",
         }
 
     async def confirm(
@@ -746,5 +749,5 @@ class ReviewService:
             "status": "confirmed" if request.reject_reason is None else "rejected",
             "change_count": 0,
             "bad_case_count": 0,
-            "next_review_status": "dispatching" if request.reject_reason is None else "pending_review",
+            "next_review_status": "dispatching" if request.reject_reason is None else "returned",
         }

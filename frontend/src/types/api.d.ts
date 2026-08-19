@@ -36,6 +36,7 @@ export interface paths {
          *
          *     - status: 按工单状态筛选（pending_review / confirmed / stashed）
          *     - keyword: 按序列号/站点/客户/项目名模糊搜索
+         *     - created_from/created_to: 按创建日期范围筛选（包含起止日期）
          *     - offset/limit: 分页参数（默认每页 50 条）
          */
         get: operations["list_workorders_api_workorders_get"];
@@ -733,6 +734,10 @@ export interface components {
             review_started_at?: string | null;
             /** Review Duration Seconds */
             review_duration_seconds?: number | null;
+            /** Reviewed At */
+            reviewed_at?: string | null;
+            /** Reviewed By */
+            reviewed_by?: string | null;
             /** Ownerid */
             ownerId?: string | null;
             /** Dimdepart */
@@ -821,8 +826,14 @@ export interface components {
             review_status?: string | null;
             /** Caseaccountid */
             caseAccountId?: string | null;
+            /** Projectname  C */
+            projectName__c?: string | null;
             /** Bigcustshortname  C */
             bigCustShortName__c?: string | null;
+            /** Casedescription */
+            caseDescription?: string | null;
+            /** Casesource */
+            caseSource?: string | null;
             /** Created At */
             created_at?: string | null;
         };
@@ -937,6 +948,8 @@ export interface operations {
             query?: {
                 status?: string | null;
                 keyword?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
                 offset?: number;
                 limit?: number;
             };

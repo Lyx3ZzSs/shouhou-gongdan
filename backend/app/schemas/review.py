@@ -60,7 +60,10 @@ class WorkOrderSummary(BaseModel):
     name: str | None = None
     review_status: str | None = None
     caseAccountId: str | None = None
+    projectName__c: str | None = None
     bigCustShortName__c: str | None = None
+    caseDescription: str | None = None
+    caseSource: str | None = None
     created_at: str | None = None
 
     @field_validator('created_at', mode='before')
@@ -94,6 +97,8 @@ class WorkOrderResponse(BaseModel):
     sync_last_error: str | None = None
     review_started_at: str | None = None
     review_duration_seconds: int | None = None
+    reviewed_at: str | None = None
+    reviewed_by: str | None = None
 
     # ---- 销售易 serviceCase API 业务字段 ----
 
@@ -139,7 +144,7 @@ class WorkOrderResponse(BaseModel):
     # Hidden
     defectFlag__c: str | None = None
 
-    @field_validator('created_at', 'last_rejected_at', mode='before')
+    @field_validator('created_at', 'last_rejected_at', 'reviewed_at', mode='before')
     @classmethod
     def coerce_datetime_fields(cls, v: datetime | str | None) -> str | None:
         return v.isoformat() if isinstance(v, datetime) else (str(v) if v is not None else None)
@@ -234,6 +239,11 @@ class PaginatedWorkOrderSummary(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class NextWorkOrderResponse(BaseModel):
+    """服务端领取的下一张待审核工单。"""
+    workorder_id: str | None = None
 
 
 class LockStatus(BaseModel):

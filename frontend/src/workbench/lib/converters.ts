@@ -275,9 +275,9 @@ const FIELD_MAPPING: FieldMapping[] = [
   // ---- 客户与项目 (project) ----
   { backendKey: 'bigCustShortName__c', id: 'bigCustShortName__c', name: '大客户简称', group: 'project', type: 'text' },
   { backendKey: 'custLevel1__c', id: 'custLevel1__c', name: '客户级别', group: 'project', type: 'text' },
-  { backendKey: 'projectName__c', id: 'projectName__c', name: '项目名称', group: 'project', type: 'text', isKey: true },
+  { backendKey: 'projectName__c', id: 'projectName__c', name: '项目名称', group: 'project', type: 'text', required: true, isKey: true },
   { backendKey: 'projectProvince__c', id: 'projectProvince__c', name: '项目省份', group: 'project', type: 'text' },
-  { backendKey: 'caseAccountId', id: 'caseAccountId', name: '场站编号', group: 'project', type: 'text' },
+  { backendKey: 'caseAccountId', id: 'caseAccountId', name: '场站编号', group: 'project', type: 'text', required: true, isKey: true },
   { backendKey: 'stationName', id: 'stationName', name: '场站名称', group: 'project', type: 'text', readonly: true },
 
   // ---- 服务周期 (service_period) ----
@@ -287,19 +287,19 @@ const FIELD_MAPPING: FieldMapping[] = [
   { backendKey: 'isOverdueService__c', id: 'isOverdueService__c', name: '是否超期服务', group: 'service_period', type: 'select', options: YES_NO_OPTIONS },
 
   // ---- 问题描述 (description) ----
-  { backendKey: 'caseDescription', id: 'caseDescription', name: '工单描述', group: 'description', type: 'textarea', required: true, isKey: true },
+  { backendKey: 'caseDescription', id: 'caseDescription', name: '工单描述', group: 'description', type: 'textarea', isKey: true },
   { backendKey: 'remark__c', id: 'remark__c', name: '备注', group: 'description', type: 'textarea' },
   { backendKey: 'relatedAttachment__c', id: 'relatedAttachment__c', name: '相关附件', group: 'description', type: 'text' },
   { backendKey: 'feedbackChannel__c', id: 'feedbackChannel__c', name: '反馈渠道', group: 'description', type: 'select', required: true, options: FEEDBACK_CHANNEL_OPTIONS },
 
   // ---- 反馈信息 (feedback) ----
-  { backendKey: 'feedbackUserName__c', id: 'feedbackUserName__c', name: '反馈人姓名', group: 'feedback', type: 'text' },
-  { backendKey: 'feedbackUserContact__c', id: 'feedbackUserContact__c', name: '反馈人联系方式', group: 'feedback', type: 'phone' },
+  { backendKey: 'feedbackUserName__c', id: 'feedbackUserName__c', name: '反馈人姓名', group: 'feedback', type: 'text', isKey: true },
+  { backendKey: 'feedbackUserContact__c', id: 'feedbackUserContact__c', name: '反馈人联系方式', group: 'feedback', type: 'phone', isKey: true },
   { backendKey: 'feedbackCount__c', id: 'feedbackCount__c', name: '反馈次数', group: 'feedback', type: 'text' },
   { backendKey: 'needCallBack__c', id: 'needCallBack__c', name: '是否要求回电话', group: 'feedback', type: 'select', options: YES_NO_OPTIONS },
 
   // ---- 处理信息 (handling) ----
-  { backendKey: 'problemResponsible__c', id: 'problemResponsible__c', name: '问题责任人', group: 'handling', type: 'text', required: true },
+  { backendKey: 'problemResponsible__c', id: 'problemResponsible__c', name: '问题责任人', group: 'handling', type: 'text', required: true, isKey: true },
   { backendKey: 'problemDept__c', id: 'problemDept__c', name: '问题责任部门', group: 'handling', type: 'text' },
   { backendKey: 'isHandled__c', id: 'isHandled__c', name: '是否处理', group: 'handling', type: 'select', options: YES_NO_OPTIONS },
   { backendKey: 'needOnSite__c', id: 'needOnSite__c', name: '是否要求进场', group: 'handling', type: 'select', options: YES_NO_OPTIONS },
@@ -554,5 +554,5 @@ function computeSlaMinutes(requireSolveTime: string | null | undefined): number 
   }
 
   const remaining = Math.round((targetMs - Date.now()) / 60_000);
-  return Math.max(0, remaining);
+  return remaining;
 }

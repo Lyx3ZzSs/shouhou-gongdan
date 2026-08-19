@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, TrendingUp, Clock, CheckCircle2, AlertCircle, Wrench } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle2, AlertCircle, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Line, Column, Pie } from '@antv/g2plot';
 import type { StatsOverview, TrendPoint, ReviewerStat, DurationBucket, StatusBucket, FieldCorrection, EfficiencyPoint } from './types';
@@ -14,6 +14,7 @@ import {
   fetchEfficiency,
 } from '../api/stats';
 import { fadeInUp, staggerContainer, staggerItem } from '@/lib/animations';
+import { PlatformNav, type PlatformView } from '@/components/PlatformNav';
 
 // ── 格式化工具 ──
 function fmtDuration(s: number | null): string {
@@ -88,9 +89,9 @@ function useChart(
 }
 
 // ── 主组件 ──
-interface Props { onBack: () => void }
+interface Props { onNavigate: (view: PlatformView) => void }
 
-export default function ReviewStats({ onBack }: Props) {
+export default function ReviewStats({ onNavigate }: Props) {
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [trends, setTrends] = useState<TrendPoint[]>([]);
   const [reviewers, setReviewers] = useState<ReviewerStat[]>([]);
@@ -98,6 +99,7 @@ export default function ReviewStats({ onBack }: Props) {
   const [statuses, setStatuses] = useState<StatusBucket[]>([]);
   const [corrections, setCorrections] = useState<FieldCorrection[]>([]);
   const [efficiency, setEfficiency] = useState<EfficiencyPoint[]>([]);
+  const [days, setDays] = useState(30);
 
   const trendRef = useRef<HTMLDivElement>(null);
   const reviewerRef = useRef<HTMLDivElement>(null);
@@ -106,10 +108,12 @@ export default function ReviewStats({ onBack }: Props) {
   const effRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
     Promise.all([
       fetchStatsOverview(),
-      fetchTrends(30),
-      fetchByReviewer(),
+      fetchTrends(days),
+      fetchByReviewer(from, to),
       fetchDurationDistribution(),
       fetchStatusDistribution(),
       fetchFieldCorrections(15),
@@ -123,7 +127,7 @@ export default function ReviewStats({ onBack }: Props) {
       setCorrections(fc);
       setEfficiency(eff);
     }).catch(console.error);
-  }, []);
+  }, [days]);
 
   // 效率趋势折线数据：一次通过率 + 同步接受率（同为百分比，可同轴）
   const effLineData = efficiency.flatMap((p) => [
@@ -200,15 +204,19 @@ export default function ReviewStats({ onBack }: Props) {
   }));
 
   return (
-    <div className="flex h-screen flex-col bg-gradient-to-b from-app via-background to-app">
-      {/* 顶部导航 */}
-      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4">
-        <Button variant="ghost" size="sm" onClick={onBack} className="rounded-xl">
-          <ArrowLeft className="mr-1 h-4 w-4" />
-          返回工作台
-        </Button>
-        <h1 className="text-lg font-semibold tracking-tight">审核统计</h1>
-      </header>
+    <div className="flex h-screen bg-gradient-to-b from-app via-background to-app">
+      <PlatformNav active="stats" onNavigate={onNavigate} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border/40 bg-background/80 px-6">
+          <h1 className="text-lg font-semibold tracking-tight">审核统计</h1>
+          <div className="ml-auto flex gap-1" aria-label="统计时间范围">
+            {[7, 30, 90].map((value) => (
+              <Button key={value} size="sm" variant={days === value ? 'default' : 'ghost'} onClick={() => setDays(value)}>
+                近 {value} 天
+              </Button>
+            ))}
+          </div>
+        </header>
 
       {/* 可滚动内容 */}
       <main className="flex-1 overflow-auto p-6">
@@ -247,7 +255,7 @@ export default function ReviewStats({ onBack }: Props) {
             initial="hidden"
             animate="visible"
           >
-            <h2 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">每日审核趋势（近30天）</h2>
+            <h2 className="mb-3 text-sm font-semibold tracking-wide text-muted-foreground">每日审核趋势（近 {days} 天）</h2>
             <div ref={trendRef} style={{ minHeight: 280 }} />
           </motion.section>
 
@@ -359,6 +367,7 @@ export default function ReviewStats({ onBack }: Props) {
           </motion.section>
         </div>
       </main>
+      </div>
     </div>
   );
 }

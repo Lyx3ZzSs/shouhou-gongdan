@@ -1,4 +1,5 @@
 import pytest
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
@@ -28,6 +29,41 @@ async def client(mock_user):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_list_workorders_filters_created_date_range(client):
+    with patch("app.routers.review.import_workorders", new_callable=AsyncMock) as import_mock, \
+         patch("app.routers.review.WorkOrderQueryService") as MockSvc:
+        mock_instance = MagicMock()
+        mock_instance.list_summaries = AsyncMock(return_value={
+            "items": [], "total": 0, "offset": 0, "limit": 10,
+        })
+        MockSvc.return_value = mock_instance
+
+        resp = await client.get(
+            "/api/workorders?created_from=2026-08-01&created_to=2026-08-18&limit=10"
+        )
+
+    assert resp.status_code == 200
+    import_mock.assert_awaited_once()
+    mock_instance.list_summaries.assert_awaited_once_with(
+        status=None,
+        keyword=None,
+        created_from=date(2026, 8, 1),
+        created_to=date(2026, 8, 18),
+        offset=0,
+        limit=10,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_workorders_rejects_reversed_created_date_range(client):
+    resp = await client.get(
+        "/api/workorders?created_from=2026-08-18&created_to=2026-08-01"
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "开始日期不能晚于结束日期"
 
 
 @pytest.mark.asyncio
@@ -235,6 +271,7 @@ async def test_get_stash_without_saved_progress_returns_empty_data(client):
 @pytest.mark.asyncio
 async def test_reconcile_uncertain_sync_binds_external_id(client):
     db = AsyncMock()
+    db.add = MagicMock()
     update_result = MagicMock()
     update_result.scalar_one_or_none.return_value = "T-001"
     db.execute = AsyncMock(return_value=update_result)
@@ -270,6 +307,7 @@ async def test_uncertain_sync_cannot_be_retried_blindly(client):
 @pytest.mark.asyncio
 async def test_admin_can_confirm_uncertain_was_not_created(client):
     db = AsyncMock()
+    db.add = MagicMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = "T-001"
     db.execute = AsyncMock(return_value=result)
@@ -285,6 +323,7 @@ async def test_admin_can_confirm_uncertain_was_not_created(client):
 @pytest.mark.asyncio
 async def test_failed_retry_resets_to_pending_before_scheduling(client):
     db = AsyncMock()
+    db.add = MagicMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = SimpleNamespace(
         id="WO001", sync_status="failed", sync_external_id=None,
@@ -297,4 +336,28 @@ async def test_failed_retry_resets_to_pending_before_scheduling(client):
         resp = await client.post("/api/admin/sync-failures/WO001/retry")
 
     assert resp.status_code == 200
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_take_next_workorder_skips_locked_ticket(client):
+    db = AsyncMock()
+    first = SimpleNamespace(id="WO001", lock_fencing_token=2, review_started_at=None)
+    second = SimpleNamespace(id="WO002", lock_fencing_token=4, review_started_at=None)
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [first, second]
+    db.execute = AsyncMock(return_value=result)
+    app.dependency_overrides[get_db] = lambda: db
+    lock = MagicMock()
+    lock.acquire = AsyncMock(side_effect=[
+        {"locked": False, "owner": "其他审核员"},
+        {"locked": True, "owner": "张三", "fencing_token": 5},
+    ])
+
+    with patch("app.routers.review.get_lock_service", return_value=lock):
+        resp = await client.post("/api/workorders/next")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"workorder_id": "WO002"}
+    assert second.lock_fencing_token == 5
     db.commit.assert_awaited_once()

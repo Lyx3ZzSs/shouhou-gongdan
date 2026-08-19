@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { AlertTriangle, X } from 'lucide-react';
 import { useReviewStore } from '../store/useReviewStore';
 import { toastVariants } from '@/lib/animations';
@@ -15,15 +15,14 @@ export function ErrorNoticeToast() {
     return () => clearTimeout(t);
   }, [notice, clear]);
 
+  if (!notice) return null;
+
   return (
-    <AnimatePresence>
-      {notice && (
         <motion.div
           className="pointer-events-none fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
           variants={toastVariants}
           initial="hidden"
           animate="visible"
-          exit="exit"
         >
           <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-warning/30 bg-background/90 backdrop-blur-xl shadow-glass-lg px-4 py-2.5">
             <AlertTriangle className="h-4 w-4 text-warning" />
@@ -37,7 +36,5 @@ export function ErrorNoticeToast() {
             </button>
           </div>
         </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
